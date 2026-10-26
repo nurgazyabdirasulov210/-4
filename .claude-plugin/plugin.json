@@ -1,1 +1,0 @@
-{ "name": "task-progress", "version": "0.1.0", "description": "Панель над вводом: что делает Claude сейчас, сколько времени прошло и сколько осталось до конца задачи.", "types": "./types/index.d.ts" }
