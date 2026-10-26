@@ -22,6 +22,20 @@ const clock = (ms: number) => {
   return m > 0 ? `${m} мин ${s % 60} с` : `${s} с`
 }
 
+const summary = (p: Progress): string => {
+  if (!p.isRunning) {
+    return p.lastSeconds === null
+      ? 'Задача ещё не запускалась'
+      : `✔ Готово за ${clock(p.lastSeconds * 1000)}, шагов: ${p.steps}, осталось: 0 с`
+  }
+  const elapsed = p.nowMs - p.startedAt
+  const pct = p.total > 0 ? Math.round((p.done / p.total) * 100) : null
+  const left =
+    p.total > 0 && p.done > 0 ? `≈ ${clock((elapsed / p.done) * (p.total - p.done))}` : 'оценка после плана'
+  const plan = pct === null ? '' : ` ${pct}% (${p.done}/${p.total})`
+  return `⏳ ${p.activity} · прошло ${clock(elapsed)} · шагов ${p.steps}${plan} · осталось ${left}`
+}
+
 const describe = (e: any): string => {
   const target = e.file_path ?? e.command ?? e.pattern ?? e.url ?? e.query ?? e.description ?? ''
   const text = String(target).replace(/\s+/g, ' ').slice(0, 50)
@@ -37,6 +51,15 @@ export const register: Register = on => {
     tick = undefined
   }
 
+  on('session.start', async ($, e, next) => {
+    await $.command.register({ name: 'progress', description: 'Показать прогресс текущей задачи' })
+    return next(e)
+  })
+
+  on('command.run', { command: 'progress' }, async ($, e, next) => ({
+    text: summary(await read($, progress)),
+  }))
+
   on('prompt.submit', async ($, e, next) => {
     const now = await $.clock.now()
     tasks.clear()
@@ -51,7 +74,8 @@ export const register: Register = on => {
     }))
     tick = $.clock.every(1000, async () => {
       const t = await $.clock.now()
-      await update($, progress, p => (p.isRunning ? { ...p, nowMs: t } : p))
+      const p = await update($, progress, q => (q.isRunning ? { ...q, nowMs: t } : q))
+      if (p.isRunning) $.ui.status(summary(p))
     })
 
     return next(e)
@@ -95,11 +119,15 @@ export const register: Register = on => {
   on('turn.complete', async ($, e, next) => {
     stop()
     const now = await $.clock.now()
-    await update($, progress, p => ({
+    const done = await update($, progress, p => ({
       ...p,
       isRunning: false,
       lastSeconds: Math.round((now - p.startedAt) / 1000),
     }))
+    {
+      $.ui.status(undefined)
+      $.ui.toast(summary(done))
+    }
 
     return next(e)
   })
