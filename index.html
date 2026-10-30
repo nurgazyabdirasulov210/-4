@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#c99a62">
+  <title>Dune Drift — дрифт и гонки в открытой пустыне</title>
+  <link rel="stylesheet" href="style.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "./lib/three/three.module.min.js",
+        "three/addons/": "./lib/three/addons/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <div id="hud" class="hidden">
+    <div class="top-left">
+      <div class="pill"><span id="speed">000</span>&nbsp;км/ч · <span id="gear">1</span>&nbsp;пер. · <span id="fps">60</span>&nbsp;FPS</div>
+      <div id="boostBar" class="pill bar"><span>ИМПУЛЬС</span><div class="track"><div id="boostFill"></div></div></div>
+      <canvas id="minimap" width="150" height="150"></canvas>
+    </div>
+    <div class="top-right">
+      <button class="pill btn" id="btnRace">НА ТРАССУ</button>
+      <div class="row">
+        <button class="pill btn" id="btnCam" title="Камера (C)">КАМЕРА</button>
+        <button class="pill btn" id="btnTime" title="Время суток (N)">ВРЕМЯ</button>
+        <button class="pill btn" id="btnSound" title="Звук (M)">ЗВУК</button>
+        <button class="pill btn" id="btnReset" title="Вернуть машину (R)">⟲</button>
+      </div>
+      <div id="totalScore" class="pill">ОЧКИ 0</div>
+    </div>
+
+    <div id="racePanel" class="panel hidden">
+      <div class="r"><span>ПОЗИЦИЯ</span><b id="pos">1/4</b></div>
+      <div class="r"><span>КРУГ</span><b id="lap">1</b></div>
+      <div class="r"><span>ВРЕМЯ</span><b id="lapTime">0:00.00</b></div>
+      <div class="r"><span>ЛУЧШИЙ</span><b id="bestLap">—</b></div>
+      <div class="r"><span>ЧЕКПОИНТ</span><b id="cp">0/12</b></div>
+      <div id="cpArrow"></div>
+    </div>
+
+    <div id="drift">
+      <div class="lbl">ДРИФТ <span id="driftAngle">0°</span></div>
+      <div id="driftScore">0</div>
+      <div id="driftMult">x1</div>
+    </div>
+    <div id="toasts"></div>
+    <div id="bigText"></div>
+
+    <div id="touch">
+      <div id="steerZone">
+        <div class="hint"><span>↑ ПРЫЖОК</span><span>·</span><span>↓ ИМПУЛЬС</span></div>
+        <div class="hint">← РУЛЕНИЕ →</div>
+        <div id="steerTrack"><div class="center"></div><div id="steerKnob"></div></div>
+      </div>
+      <div id="pedals">
+        <button id="tJump" class="tbtn sm">ПРЫЖОК</button>
+        <button id="tBoost" class="tbtn sm">ИМПУЛЬС</button>
+        <button id="tHand" class="tbtn">РУЧНИК</button>
+        <button id="tBrake" class="tbtn">ТОРМОЗ<small>↓ задний</small></button>
+        <button id="tGas" class="tbtn gas">ГАЗ</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="menu">
+    <div class="card">
+      <div class="logo">DUNE<span>DRIFT</span></div>
+      <div class="sub">дрифт · гонки · открытая пустыня</div>
+      <div id="loading">Генерация мира…</div>
+      <button id="play" class="play hidden">ПОЕХАЛИ</button>
+      <div class="controls desk">
+        <div><b>W / ↑</b> газ</div><div><b>S / ↓</b> тормоз / назад</div>
+        <div><b>A D / ← →</b> руль</div><div><b>ПРОБЕЛ</b> ручник</div>
+        <div><b>SHIFT</b> импульс</div><div><b>J</b> прыжок</div>
+        <div><b>C</b> камера</div><div><b>T</b> на трассу</div>
+        <div><b>N</b> время суток</div><div><b>R</b> сброс машины</div>
+        <div><b>M</b> звук</div><div><b>Мышь</b> обзор (тянуть)</div>
+      </div>
+      <div class="controls mob">
+        <div>Слева — слайдер руля: свайп ↑ прыжок, ↓ импульс</div>
+        <div>Справа — газ, тормоз, ручник</div>
+      </div>
+      <div class="tip">Заносы приносят очки и заряжают импульс. Гребни барханов и трамплины — для полётов.</div>
+    </div>
+  </div>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>

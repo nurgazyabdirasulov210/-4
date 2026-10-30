@@ -1,0 +1,167 @@
+:root {
+  --glass: rgba(28, 24, 20, 0.34);
+  --glass-strong: rgba(28, 24, 20, 0.55);
+  --line: rgba(255, 255, 255, 0.16);
+  --text: #fff;
+  --muted: rgba(255, 255, 255, 0.7);
+  --accent: #2ee6ff;
+  --gold: #ffc23d;
+  --safe-l: env(safe-area-inset-left, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body {
+  margin: 0; height: 100%; overflow: hidden; background: #c99a62;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  color: var(--text); user-select: none; -webkit-user-select: none; touch-action: none;
+}
+#game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+.hidden { display: none !important; }
+
+#hud { position: fixed; inset: 0; pointer-events: none; }
+.pill {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: var(--glass); border: 1px solid var(--line); border-radius: 10px;
+  padding: 6px 11px; font-size: 12px; font-weight: 600; letter-spacing: .04em;
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  text-shadow: 0 1px 2px rgba(0,0,0,.3); white-space: nowrap;
+}
+.btn { pointer-events: auto; cursor: pointer; color: #fff; font: inherit; font-size: 12px; font-weight: 700; }
+.btn:hover { background: var(--glass-strong); }
+.top-left { position: absolute; top: 12px; left: calc(12px + var(--safe-l)); display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.top-right { position: absolute; top: 12px; right: calc(12px + var(--safe-r)); display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
+.top-right .row { display: flex; gap: 6px; }
+#btnRace { font-size: 13px; padding: 8px 14px; }
+
+.bar { gap: 8px; font-size: 10px; }
+.bar .track { width: 90px; height: 6px; border-radius: 3px; background: rgba(255,255,255,.18); overflow: hidden; }
+#boostFill { height: 100%; width: 100%; background: linear-gradient(90deg, #ff9a2e, #ffd36b); transform-origin: left; }
+#boostBar.active #boostFill { background: linear-gradient(90deg, #2ee6ff, #b8f6ff); box-shadow: 0 0 10px #2ee6ff; }
+
+#minimap { width: 150px; height: 150px; border-radius: 50%; border: 2px solid rgba(255,255,255,.35); box-shadow: 0 4px 18px rgba(0,0,0,.25); }
+
+#racePanel {
+  position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+  background: var(--glass); border: 1px solid var(--line); border-radius: 12px; padding: 8px 14px;
+  display: grid; grid-template-columns: repeat(5, auto); gap: 4px 16px; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+}
+#racePanel .r { display: flex; flex-direction: column; align-items: center; }
+#racePanel span { font-size: 9px; color: var(--muted); letter-spacing: .1em; }
+#racePanel b { font-size: 16px; font-variant-numeric: tabular-nums; }
+#cpArrow {
+  position: absolute; left: 50%; top: calc(100% + 10px); margin-left: -18px; width: 36px; height: 36px;
+  background: radial-gradient(circle, rgba(46,230,255,.25), transparent 70%);
+}
+#cpArrow::before {
+  content: ""; position: absolute; left: 9px; top: 2px; border-left: 9px solid transparent; border-right: 9px solid transparent;
+  border-bottom: 22px solid var(--accent); filter: drop-shadow(0 0 6px var(--accent));
+}
+#cpArrow::after { content: attr(data-dist); position: absolute; top: 40px; left: 50%; transform: translateX(-50%) rotate(0); font-size: 10px; white-space: nowrap; }
+
+#drift {
+  position: absolute; top: 22%; left: 50%; transform: translate(-50%, -10px) scale(.9); opacity: 0;
+  text-align: center; transition: opacity .2s, transform .2s; text-shadow: 0 2px 10px rgba(0,0,0,.35);
+}
+#drift.on { opacity: 1; transform: translate(-50%, 0) scale(1); }
+#drift .lbl { font-size: 12px; letter-spacing: .3em; font-weight: 800; color: #fff; }
+#driftScore { font-size: 44px; font-weight: 900; font-style: italic; letter-spacing: -.02em; font-variant-numeric: tabular-nums;
+  background: linear-gradient(180deg, #fff, #ffe2a8); -webkit-background-clip: text; background-clip: text; color: transparent; }
+#driftMult { display: inline-block; font-size: 18px; font-weight: 900; color: #1b1b1b; background: var(--gold); border-radius: 8px; padding: 1px 10px; }
+
+#toasts { position: absolute; top: 38%; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.toast {
+  background: var(--glass-strong); border: 1px solid var(--line); border-radius: 10px; padding: 6px 14px;
+  font-weight: 800; font-size: 14px; letter-spacing: .05em; animation: pop .35s cubic-bezier(.2,1.6,.4,1); transition: opacity .5s, transform .5s;
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+}
+.toast.good { color: #ffe08a; }
+.toast.bad { color: #ff8a7a; }
+.toast.cyan { color: #9ff3ff; }
+.toast.out { opacity: 0; transform: translateY(-10px); }
+@keyframes pop { from { transform: scale(.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+#bigText {
+  position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%) scale(.5); opacity: 0;
+  font-size: 96px; font-weight: 900; font-style: italic; color: #fff; text-shadow: 0 6px 30px rgba(0,0,0,.35);
+}
+#bigText.show { animation: big .9s ease-out forwards; }
+@keyframes big { 0% { opacity: 0; transform: translate(-50%,-50%) scale(1.8); } 20% { opacity: 1; transform: translate(-50%,-50%) scale(1); } 80% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%,-50%) scale(.9); } }
+
+/* ---------- Сенсорное управление ---------- */
+#touch { display: none; }
+body.touch #touch { display: block; }
+#steerZone {
+  position: absolute; left: calc(14px + var(--safe-l)); bottom: calc(14px + var(--safe-b)); width: min(42vw, 330px); height: 120px;
+  pointer-events: auto; display: flex; flex-direction: column; justify-content: flex-end; gap: 6px; touch-action: none;
+}
+.hint { display: flex; gap: 8px; justify-content: center; font-size: 10px; font-weight: 700; letter-spacing: .1em; color: var(--muted); }
+#steerTrack {
+  position: relative; height: 56px; border-radius: 14px; background: var(--glass); border: 1px solid var(--line);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+}
+#steerTrack .center { position: absolute; left: 50%; top: 12px; bottom: 12px; width: 2px; margin-left: -1px; background: rgba(255,255,255,.35); }
+#steerTrack::after { content: ""; position: absolute; left: 16px; right: 16px; top: 26px; height: 4px; border-radius: 2px; background: rgba(70,170,255,.6); }
+#steerKnob {
+  position: absolute; left: 50%; top: 50%; width: 40px; height: 40px; margin: -20px 0 0 -20px; border-radius: 50%; z-index: 1;
+  background: radial-gradient(circle at 35% 35%, #8fd3ff, #3aa2ff); box-shadow: 0 0 14px rgba(58,162,255,.7);
+}
+#pedals {
+  position: absolute; right: calc(14px + var(--safe-r)); bottom: calc(14px + var(--safe-b));
+  display: grid; grid-template-columns: 74px 74px 96px; grid-template-rows: 46px 64px; gap: 8px; pointer-events: auto;
+}
+.tbtn {
+  border: 1px solid var(--line); border-radius: 14px; background: var(--glass); color: #fff; font: inherit;
+  font-size: 11px; font-weight: 800; letter-spacing: .06em; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); touch-action: none;
+}
+.tbtn small { font-size: 8px; color: var(--muted); font-weight: 600; margin-top: 2px; }
+.tbtn.on { background: rgba(255,255,255,.35); }
+#tJump { grid-column: 1; grid-row: 1; }
+#tBoost { grid-column: 2; grid-row: 1; }
+#tHand { grid-column: 1; grid-row: 2; }
+#tBrake { grid-column: 2; grid-row: 2; }
+#tGas { grid-column: 3; grid-row: 1 / span 2; font-size: 15px; background: rgba(60,200,120,.28); }
+#tGas.on { background: rgba(60,220,130,.6); }
+
+body.touch #minimap { width: 104px; height: 104px; }
+body.touch #driftScore { font-size: 34px; }
+body.touch #bigText { font-size: 64px; }
+
+/* ---------- Меню ---------- */
+#menu {
+  position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 16px;
+  background: radial-gradient(ellipse at 50% 40%, rgba(255,214,160,.25), rgba(60,35,15,.55));
+  backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); z-index: 10; overflow: auto;
+}
+#menu .card {
+  width: min(560px, 100%); text-align: center; padding: 28px 22px; border-radius: 22px;
+  background: rgba(30,22,15,.45); border: 1px solid rgba(255,255,255,.2); box-shadow: 0 20px 60px rgba(0,0,0,.35);
+}
+.logo { font-size: clamp(44px, 11vw, 78px); font-weight: 900; font-style: italic; letter-spacing: -.03em; line-height: .95; }
+.logo span { display: block; background: linear-gradient(90deg, #ffb347, #ffd36b, #fff2c8); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.sub { margin-top: 8px; font-size: 13px; letter-spacing: .25em; text-transform: uppercase; color: var(--muted); }
+#loading { margin: 22px 0 8px; font-size: 14px; color: #ffe2a8; }
+.play {
+  margin: 22px 0 10px; padding: 14px 46px; font-size: 20px; font-weight: 900; letter-spacing: .12em; color: #2a1606; cursor: pointer;
+  border: 0; border-radius: 14px; background: linear-gradient(180deg, #ffd36b, #ff9f2e); box-shadow: 0 8px 26px rgba(255,160,50,.45);
+}
+.play:hover { filter: brightness(1.08); }
+.controls { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 18px; margin: 14px auto 0; max-width: 420px; text-align: left; font-size: 12.5px; color: rgba(255,255,255,.85); }
+.controls b { display: inline-block; min-width: 92px; color: #fff; }
+.controls.mob { display: none; grid-template-columns: 1fr; text-align: center; }
+body.touch .controls.desk { display: none; }
+body.touch .controls.mob { display: grid; }
+.tip { margin-top: 16px; font-size: 12px; color: var(--muted); }
+
+@media (max-height: 500px) {
+  #menu .card { padding: 16px; }
+  .logo { font-size: 40px; }
+  .controls { margin-top: 6px; }
+  #racePanel { grid-template-columns: repeat(5, auto); padding: 5px 10px; }
+  #racePanel b { font-size: 13px; }
+}
+
+body.touch #racePanel { top: 8px; grid-template-columns: repeat(3, auto); gap: 0 12px; padding: 4px 10px; }
+body.touch #racePanel span { font-size: 8px; }
+body.touch #racePanel b { font-size: 12px; }
