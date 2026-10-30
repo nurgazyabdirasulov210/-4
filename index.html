@@ -1,0 +1,804 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Пустыня — открытый мир</title>
+<style>
+  :root {
+    --glass: rgba(120, 130, 140, .38);
+    --glass-edge: rgba(255, 255, 255, .35);
+    --ink: #fff;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; touch-action: none; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #e8c9a0; font-family: -apple-system, "SF Pro Text", "Segoe UI", Roboto, sans-serif; color: var(--ink); }
+  canvas#view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+
+  .chip { position: fixed; padding: 6px 12px; border-radius: 10px; background: var(--glass); border: 1px solid var(--glass-edge); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); font-size: 12px; letter-spacing: .04em; text-shadow: 0 1px 2px rgba(0,0,0,.4); }
+  #stats { top: max(12px, env(safe-area-inset-top)); left: max(14px, env(safe-area-inset-left)); font-variant-numeric: tabular-nums; }
+  #home  { top: max(12px, env(safe-area-inset-top)); right: max(14px, env(safe-area-inset-right)); text-transform: uppercase; cursor: pointer; }
+  #home:active { background: rgba(255,255,255,.45); }
+
+  .pad { position: fixed; border-radius: 16px; background: var(--glass); border: 1px solid var(--glass-edge); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+  .lbl { position: fixed; font-size: 11px; letter-spacing: .05em; text-transform: uppercase; text-shadow: 0 1px 3px rgba(0,0,0,.55); pointer-events: none; opacity: .9; }
+
+  #steer { left: max(18px, env(safe-area-inset-left)); bottom: max(22px, env(safe-area-inset-bottom)); width: min(38vw, 340px); height: 70px; }
+  #steer .rail { position: absolute; left: 14px; right: 14px; top: 50%; height: 3px; margin-top: -1.5px; background: rgba(255,255,255,.55); border-radius: 2px; }
+  #steer .knob { position: absolute; top: 50%; left: 50%; width: 34px; height: 34px; margin: -17px 0 0 -17px; border-radius: 50%; background: #4db8ff; box-shadow: 0 0 0 4px rgba(77,184,255,.3), 0 2px 8px rgba(0,0,0,.35); }
+  #steer .tick { position: absolute; left: 50%; top: 18px; bottom: 18px; width: 2px; background: rgba(255,255,255,.7); }
+  #steerTop { left: max(18px, env(safe-area-inset-left)); bottom: calc(max(22px, env(safe-area-inset-bottom)) + 78px); display: flex; gap: 16px; width: min(38vw, 340px); justify-content: space-between; }
+
+  #brake { right: calc(max(18px, env(safe-area-inset-right)) + 92px); bottom: max(22px, env(safe-area-inset-bottom)); width: 78px; height: 96px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; font-size: 12px; font-weight: 600; }
+  #brake small { font-size: 10px; opacity: .8; font-weight: 400; }
+  #gas { right: max(18px, env(safe-area-inset-right)); bottom: max(22px, env(safe-area-inset-bottom)); width: 70px; height: 150px; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 12px; font-size: 12px; font-weight: 600; overflow: hidden; }
+  #gas::before { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: var(--fill, 0%); background: rgba(77,184,255,.55); transition: height .12s; }
+  #gas span, #brake span { position: relative; }
+  .pad.on { background: rgba(255,255,255,.5); }
+
+  #intro { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; background: rgba(40, 24, 8, .55); text-align: center; padding: 24px; z-index: 10; cursor: pointer; }
+  #intro h1 { margin: 0; font-size: clamp(26px, 6vw, 48px); letter-spacing: .04em; text-shadow: 0 2px 12px rgba(0,0,0,.5); }
+  #intro p { margin: 0; max-width: 560px; font-size: 14px; line-height: 1.5; opacity: .92; }
+  #intro .go { margin-top: 8px; padding: 12px 28px; border-radius: 999px; background: #4db8ff; color: #06223a; font-weight: 700; letter-spacing: .06em; }
+  #intro.hide { display: none; }
+
+  #rotate { position: fixed; inset: 0; z-index: 20; display: none; align-items: center; justify-content: center; text-align: center; background: #2a1a0a; font-size: 18px; padding: 24px; }
+  @media (orientation: portrait) and (pointer: coarse) { #rotate { display: flex; } }
+  @media (pointer: fine) { #steerTop, #steer, #brake, #gas { display: none; } }
+</style>
+</head>
+<body>
+<canvas id="view"></canvas>
+
+<div class="chip" id="stats">000 км/ч · 60 FPS</div>
+<div class="chip" id="home">На трассу</div>
+
+<div class="lbl" id="steerTop"><span>↑ Прыжок</span><span>↓ Импульс</span></div>
+<div class="pad" id="steer"><div class="rail"></div><div class="tick"></div><div class="knob"></div></div>
+<div class="pad" id="brake"><span>ТОРМОЗ</span><small><span>↓ ручник</span></small></div>
+<div class="pad" id="gas"><span>ГАЗ</span></div>
+
+<div id="intro">
+  <h1>ПУСТЫНЯ</h1>
+  <p>Бесконечный открытый мир: дюны, камни, ветряки, трейлеры и заборы. Гони по песку, дрифтуй и прыгай с трамплинов.</p>
+  <p class="desk">Клавиатура: <b>A/D</b> или <b>←/→</b> — руль · <b>W/↑</b> — газ · <b>S/↓</b> — тормоз · <b>Shift</b> — ручник · <b>Пробел</b> — прыжок · <b>E</b> — импульс · <b>R</b> — на трассу</p>
+  <p class="touch">Сенсор: слайдер слева — руль (свайп вверх — прыжок, вниз — импульс), справа — газ и тормоз (потяни тормоз вниз — ручник).</p>
+  <div class="go">НАЖМИ, ЧТОБЫ ЕХАТЬ</div>
+</div>
+<div id="rotate">Поверните телефон горизонтально</div>
+
+<script src="lib/three.min.js"></script>
+<script>
+(() => {
+'use strict';
+
+/* ───────────────────────── утилиты ───────────────────────── */
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+const angDiff = (a, b) => { let d = (a - b) % (Math.PI * 2); if (d > Math.PI) d -= Math.PI * 2; if (d < -Math.PI) d += Math.PI * 2; return d; };
+const isTouch = matchMedia('(pointer: coarse)').matches;
+document.querySelector(isTouch ? '.desk' : '.touch').remove();
+
+function hash2(x, z) {
+  let h = Math.imul(x | 0, 374761393) ^ Math.imul(z | 0, 668265263);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+function vnoise(x, z) {
+  const ix = Math.floor(x), iz = Math.floor(z), fx = x - ix, fz = z - iz;
+  const u = fx * fx * (3 - 2 * fx), v = fz * fz * (3 - 2 * fz);
+  const a = hash2(ix, iz), b = hash2(ix + 1, iz), c = hash2(ix, iz + 1), d = hash2(ix + 1, iz + 1);
+  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+}
+function rng(seed) {
+  let s = seed >>> 0;
+  return () => { s = (s + 0x6D2B79F5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+
+/* ───────────────────────── рельеф ───────────────────────── */
+const FLAT_Y = 12;
+function heightAt(x, z) {
+  const big = vnoise(x * 0.0045 + 11.3, z * 0.0045 + 4.7) * 16 + vnoise(x * 0.011, z * 0.011) * 6;
+  const r = 1 - Math.abs(vnoise(x * 0.016 + 50, z * 0.016 + 20) * 2 - 1);
+  const h = big + r * r * 7 + vnoise(x * 0.07, z * 0.07) * 0.5;
+  const k = smooth(15, 70, Math.hypot(x, z));
+  return h * k + FLAT_Y * (1 - k);
+}
+
+/* ───────────────────────── сцена ───────────────────────── */
+const canvas = document.getElementById('view');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+const SKY = 0xefd1a6;
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(SKY);
+scene.fog = new THREE.Fog(SKY, 90, 230);
+const camera = new THREE.PerspectiveCamera(52, 1, 0.5, 400);
+
+scene.add(new THREE.HemisphereLight(0xfff0d8, 0xb88a56, 0.85));
+const sun = new THREE.DirectionalLight(0xffe0b0, 1.7);
+const SUN_DIR = new THREE.Vector3(-0.8, 0.62, 0.45).normalize();
+sun.castShadow = true;
+sun.shadow.mapSize.set(isTouch ? 1024 : 2048, isTouch ? 1024 : 2048);
+Object.assign(sun.shadow.camera, { left: -48, right: 48, top: 48, bottom: -48, near: 1, far: 220 });
+sun.shadow.bias = -0.0006;
+sun.shadow.normalBias = 0.4;
+scene.add(sun, sun.target);
+
+function resize() {
+  const w = innerWidth, h = innerHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize);
+resize();
+
+/* ───────────────────────── террейн (бесконечный) ───────────────────────── */
+const T_N = 150, T_C = 2.4;
+const tPos = new Float32Array((T_N + 1) ** 2 * 3);
+const tCol = new Float32Array((T_N + 1) ** 2 * 3);
+const tIdx = [];
+for (let j = 0; j < T_N; j++) for (let i = 0; i < T_N; i++) {
+  const a = j * (T_N + 1) + i, b = a + 1, c = a + T_N + 1, d = c + 1;
+  tIdx.push(a, c, b, b, c, d);
+}
+const tGeo = new THREE.BufferGeometry();
+tGeo.setAttribute('position', new THREE.BufferAttribute(tPos, 3));
+tGeo.setAttribute('color', new THREE.BufferAttribute(tCol, 3));
+tGeo.setIndex(tIdx);
+const terrain = new THREE.Mesh(tGeo, new THREE.MeshLambertMaterial({ vertexColors: true }));
+terrain.receiveShadow = true;
+terrain.castShadow = true;
+terrain.frustumCulled = false;
+scene.add(terrain);
+let tOx = 1e9, tOz = 1e9;
+
+function rebuildTerrain(cx, cz) {
+  tOx = Math.round(cx / T_C) - T_N / 2;
+  tOz = Math.round(cz / T_C) - T_N / 2;
+  let p = 0;
+  for (let j = 0; j <= T_N; j++) for (let i = 0; i <= T_N; i++, p += 3) {
+    const x = (tOx + i) * T_C, z = (tOz + j) * T_C, h = heightAt(x, z);
+    tPos[p] = x; tPos[p + 1] = h; tPos[p + 2] = z;
+    const n = vnoise(x * 0.09 + 3, z * 0.09 + 9), t = smooth(4, 30, h);
+    const k = 0.93 + n * 0.14;
+    tCol[p]     = lerp(0.74, 0.97, t) * k;
+    tCol[p + 1] = lerp(0.50, 0.78, t) * k;
+    tCol[p + 2] = lerp(0.27, 0.50, t) * k;
+  }
+  tGeo.attributes.position.needsUpdate = true;
+  tGeo.attributes.color.needsUpdate = true;
+  tGeo.computeVertexNormals();
+}
+
+/* ───────────────────────── материалы и геометрии реквизита ───────────────────────── */
+const M = {
+  rock:   new THREE.MeshLambertMaterial({ color: 0xb98b5c, flatShading: true }),
+  tuft:   new THREE.MeshLambertMaterial({ color: 0x5a4526 }),
+  wood:   new THREE.MeshLambertMaterial({ color: 0x7a5530 }),
+  woodLt: new THREE.MeshLambertMaterial({ color: 0xa27a48 }),
+  dead:   new THREE.MeshLambertMaterial({ color: 0x3e2e1c }),
+  metal:  new THREE.MeshLambertMaterial({ color: 0xc9ccd0 }),
+  rust:   new THREE.MeshLambertMaterial({ color: 0x8a4a2c }),
+  steel:  new THREE.MeshLambertMaterial({ color: 0x666b70 }),
+  wire:   new THREE.MeshBasicMaterial({ color: 0x2a2018 }),
+  tire:   new THREE.MeshLambertMaterial({ color: 0x1c1c1e }),
+  ramp:   new THREE.MeshLambertMaterial({ color: 0x9b7440, side: THREE.DoubleSide, flatShading: true }),
+};
+const G = {
+  box:   new THREE.BoxGeometry(1, 1, 1),
+  cyl:   new THREE.CylinderGeometry(1, 1, 1, 10),
+  rock:  new THREE.DodecahedronGeometry(1, 0),
+  tuft:  new THREE.ConeGeometry(0.22, 1, 4).translate(0, 0.5, 0),
+};
+function mesh(g, m, sx, sy, sz, x, y, z, cast = true) {
+  const o = new THREE.Mesh(g, m);
+  o.scale.set(sx, sy, sz); o.position.set(x, y, z);
+  o.castShadow = cast; o.receiveShadow = true;
+  return o;
+}
+function segment(a, b, thick, mat, parent) {
+  const len = a.distanceTo(b), o = new THREE.Mesh(G.box, mat);
+  o.position.copy(a).add(b).multiplyScalar(0.5);
+  o.scale.set(thick, thick, len);
+  o.lookAt(b);
+  o.castShadow = mat !== M.wire;
+  parent.add(o);
+  return o;
+}
+function rampGeo(W, L, H) {
+  const w = W / 2, d = 1.6;
+  const v = [-w,0,0,  w,0,0,  -w,H,L,  w,H,L,  -w,-d,L,  w,-d,L];
+  const ix = [0,2,1, 1,2,3,  2,4,3, 3,4,5,  0,4,2,  1,3,5];
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
+  g.setIndex(ix);
+  g.computeVertexNormals();
+  return g;
+}
+
+/* ───────────────────────── чанки мира ───────────────────────── */
+const CELL = 64, RANGE = 3;
+const chunks = new Map();
+let colliders = [], ramps = [];
+const spinners = [];
+
+function buildChunk(cx, cz) {
+  const r = rng(hash2(cx, cz) * 4294967296 ^ 0x9e3779b9);
+  const ox = cx * CELL, oz = cz * CELL;
+  const group = new THREE.Group();
+  const cols = [], rps = [], disposables = [];
+  const rp = () => [ox + r() * CELL, oz + r() * CELL];
+  const nearStart = (x, z, m = 26) => Math.hypot(x, z) < m;
+
+  // камни
+  const rocks = [];
+  const clusters = 1 + Math.floor(r() * 3);
+  for (let c = 0; c < clusters; c++) {
+    const [px, pz] = rp();
+    const n = 1 + Math.floor(r() * 4);
+    for (let i = 0; i < n; i++) {
+      const x = px + (r() - .5) * 8, z = pz + (r() - .5) * 8;
+      if (nearStart(x, z)) continue;
+      rocks.push([x, z, 0.8 + r() * r() * 3.2]);
+    }
+  }
+  if (r() < 0.25) { const [x, z] = rp(); if (!nearStart(x, z, 40)) rocks.push([x, z, 5 + r() * 4]); }
+  if (rocks.length) {
+    const im = new THREE.InstancedMesh(G.rock, M.rock, rocks.length);
+    const d = new THREE.Object3D();
+    rocks.forEach(([x, z, s], i) => {
+      d.position.set(x, heightAt(x, z) + s * 0.15, z);
+      d.rotation.set(r() * 6, r() * 6, r() * 6);
+      d.scale.set(s * (1 + r() * .5), s * (.55 + r() * .3), s * (1 + r() * .5));
+      d.updateMatrix(); im.setMatrixAt(i, d.matrix);
+      cols.push({ x, z, r: s * 0.95, h: s * 1.1 + 0.3 });
+    });
+    im.castShadow = im.receiveShadow = true; im.frustumCulled = false;
+    group.add(im); disposables.push(im);
+  }
+
+  // сухие кусты
+  const tn = 14 + Math.floor(r() * 26);
+  const tuft = new THREE.InstancedMesh(G.tuft, M.tuft, tn * 3);
+  {
+    const d = new THREE.Object3D(); let k = 0;
+    for (let i = 0; i < tn; i++) {
+      const [x, z] = rp(), y = heightAt(x, z), s = 0.7 + r() * 1.3;
+      for (let j = 0; j < 3; j++) {
+        d.position.set(x + (r() - .5) * .5, y - 0.05, z + (r() - .5) * .5);
+        d.rotation.set((r() - .5) * 1.1, r() * 6, (r() - .5) * 1.1);
+        d.scale.set(s * .8, s * (.8 + r() * .6), s * .8);
+        d.updateMatrix(); tuft.setMatrixAt(k++, d.matrix);
+      }
+    }
+    tuft.castShadow = true; tuft.frustumCulled = false;
+    group.add(tuft); disposables.push(tuft);
+  }
+
+  // конструкции
+  const place = (prob, fn, margin = 28) => {
+    if (r() > prob) return;
+    const [x, z] = rp();
+    if (nearStart(x, z, margin)) return;
+    fn(x, z, heightAt(x, z));
+  };
+
+  place(0.22, (x, z, y) => { // ветряк
+    const g = new THREE.Group(); g.position.set(x, y, z); g.rotation.y = r() * 6;
+    const H = 12;
+    for (const [sx, sz] of [[-1,-1],[1,-1],[-1,1],[1,1]]) {
+      const a = new THREE.Vector3(sx * 1.6, -0.5, sz * 1.6), b = new THREE.Vector3(sx * 0.45, H, sz * 0.45);
+      segment(a, b, 0.18, M.steel, g);
+    }
+    for (let h = 3; h < H; h += 3) {
+      const k = 1 - h / H, s = 0.45 + 1.15 * k;
+      segment(new THREE.Vector3(-s, h, -s), new THREE.Vector3(s, h, -s), 0.08, M.steel, g);
+      segment(new THREE.Vector3(-s, h, s), new THREE.Vector3(s, h, s), 0.08, M.steel, g);
+    }
+    g.add(mesh(G.box, M.steel, 1.2, 0.5, 1.2, 0, H, 0));
+    const wheel = new THREE.Group(); wheel.position.set(0, H + 0.4, 1.0);
+    for (let i = 0; i < 12; i++) {
+      const b = mesh(G.box, M.metal, 0.35, 2.4, 0.04, 0, 0, 0, false);
+      const a = (i / 12) * Math.PI * 2;
+      b.position.set(Math.sin(a) * 1.5, Math.cos(a) * 1.5, 0); b.rotation.z = -a;
+      wheel.add(b);
+    }
+    g.add(wheel); spinners.push({ o: wheel, s: 0.9 + r() * 0.8 });
+    g.add(mesh(G.box, M.metal, 0.05, 1.3, 2.6, 0, H + 0.3, -1.9));
+    group.add(g); cols.push({ x, z, r: 2.4, h: 6 });
+  });
+
+  place(0.20, (x, z, y) => { // трейлер-цистерна
+    const g = new THREE.Group(); g.position.set(x, y, z); const yaw = r() * 6; g.rotation.y = yaw;
+    const tank = mesh(G.cyl, M.metal, 1.45, 3.6, 1.45, 0, 1.9, 0); tank.rotation.x = Math.PI / 2;
+    g.add(tank);
+    g.add(mesh(G.box, M.steel, 1.2, 0.3, 6.6, 0, 0.5, 0));
+    for (const zz of [-2, 2.2]) for (const s of [-1, 1]) { const w = mesh(G.cyl, M.tire, 0.55, 0.4, 0.55, s * 1.3, 0.55, zz); w.rotation.z = Math.PI / 2; g.add(w); }
+    g.add(mesh(G.box, M.rust, 0.4, 0.4, 1.5, 0, 0.8, 4.2));
+    group.add(g);
+    for (let i = -2; i <= 2; i++) cols.push({ x: x + Math.sin(yaw) * i * 1.5, z: z + Math.cos(yaw) * i * 1.5, r: 1.7, h: 4 });
+  });
+
+  place(0.14, (x, z, y) => { // сарай
+    const g = new THREE.Group(); g.position.set(x, y, z); const yaw = r() * 6; g.rotation.y = yaw;
+    g.add(mesh(G.box, M.wood, 4.2, 3, 5.4, 0, 1.1, 0));
+    const roof = mesh(G.box, M.woodLt, 5, 0.25, 6.4, 0, 2.9, 0); roof.rotation.z = 0.12; g.add(roof);
+    g.add(mesh(G.box, M.dead, 1.1, 2, 0.1, 0, 0.9, 2.72, false));
+    group.add(g);
+    for (const o of [-1.7, 0, 1.7]) cols.push({ x: x + Math.sin(yaw) * o, z: z + Math.cos(yaw) * o, r: 2.7, h: 4 });
+  });
+
+  place(0.25, (x, z, y) => { // сухое дерево
+    const g = new THREE.Group(); g.position.set(x, y, z);
+    g.add(mesh(G.cyl, M.dead, 0.22, 3.6, 0.22, 0, 1.6, 0));
+    const n = 5 + Math.floor(r() * 4);
+    for (let i = 0; i < n; i++) {
+      const a = r() * 6.28, up = 2 + r() * 1.6, len = 1.4 + r() * 1.6;
+      const b = mesh(G.cyl, M.dead, 0.07, len, 0.07, Math.sin(a) * len * 0.35, up + len * 0.3, Math.cos(a) * len * 0.35);
+      b.rotation.set(Math.cos(a) * 0.8, 0, -Math.sin(a) * 0.8); g.add(b);
+    }
+    group.add(g); cols.push({ x, z, r: 0.5, h: 4 });
+  });
+
+  place(0.22, (x, z) => { // забор
+    const a = r() * 6.28, n = 8 + Math.floor(r() * 8), step = 3.2;
+    const g = new THREE.Group(); const pts = [];
+    for (let i = 0; i < n; i++) {
+      const px = x + Math.sin(a) * i * step, pz = z + Math.cos(a) * i * step;
+      if (nearStart(px, pz, 12)) return;
+      pts.push(new THREE.Vector3(px, heightAt(px, pz), pz));
+      g.add(mesh(G.box, M.wood, 0.2, 1.7, 0.2, px, pts[i].y + 0.65, pz));
+      cols.push({ x: px, z: pz, r: 0.4, h: 1.5 });
+    }
+    for (let i = 0; i < n - 1; i++) for (const hh of [0.8, 1.35]) {
+      const p = pts[i].clone(), q = pts[i + 1].clone(); p.y += hh; q.y += hh;
+      segment(p, q, 0.08, M.woodLt, g);
+    }
+    group.add(g);
+  });
+
+  place(0.15, (x, z) => { // линия электропередач
+    const a = r() * 6.28, n = 5 + Math.floor(r() * 3), step = 24;
+    const g = new THREE.Group(); const tops = [];
+    for (let i = 0; i < n; i++) {
+      const px = x + Math.sin(a) * i * step, pz = z + Math.cos(a) * i * step, py = heightAt(px, pz);
+      if (nearStart(px, pz, 12)) return;
+      g.add(mesh(G.cyl, M.wood, 0.2, 9.5, 0.2, px, py + 4.2, pz));
+      const arm = mesh(G.box, M.wood, 3.2, 0.16, 0.16, px, py + 8.6, pz); arm.rotation.y = a; g.add(arm);
+      tops.push([new THREE.Vector3(px + Math.cos(a) * 1.4, py + 8.7, pz - Math.sin(a) * 1.4), new THREE.Vector3(px - Math.cos(a) * 1.4, py + 8.7, pz + Math.sin(a) * 1.4)]);
+      cols.push({ x: px, z: pz, r: 0.45, h: 9 });
+    }
+    for (let i = 0; i < n - 1; i++) for (let k = 0; k < 2; k++) segment(tops[i][k], tops[i + 1][k], 0.05, M.wire, g);
+    group.add(g);
+  });
+
+  place(0.16, (x, z, y) => { // трамплин
+    const yaw = r() * 6.28, W = 5, L = 9, H = 2.6;
+    const m = new THREE.Mesh(rampGeo(W, L, H), M.ramp);
+    m.position.set(x, y, z); m.rotation.y = yaw; m.castShadow = m.receiveShadow = true;
+    group.add(m); disposables.push(m.geometry);
+    rps.push({ x, z, yaw, W, L, H, base: y, sin: Math.sin(yaw), cos: Math.cos(yaw) });
+  }, 36);
+
+  scene.add(group);
+  return { group, cols, rps, disposables };
+}
+
+function refreshLists() {
+  colliders = []; ramps = [];
+  for (const c of chunks.values()) { colliders.push(...c.cols); ramps.push(...c.rps); }
+}
+function updateChunks(px, pz, budget) {
+  const ccx = Math.floor(px / CELL), ccz = Math.floor(pz / CELL);
+  let changed = false;
+  const need = [];
+  for (let dz = -RANGE; dz <= RANGE; dz++) for (let dx = -RANGE; dx <= RANGE; dx++) {
+    const k = (ccx + dx) + ',' + (ccz + dz);
+    if (!chunks.has(k)) need.push([dx * dx + dz * dz, ccx + dx, ccz + dz, k]);
+  }
+  need.sort((a, b) => a[0] - b[0]);
+  for (let i = 0; i < Math.min(budget, need.length); i++) { chunks.set(need[i][3], buildChunk(need[i][1], need[i][2])); changed = true; }
+  for (const [k, c] of chunks) {
+    const [x, z] = k.split(',').map(Number);
+    if (Math.abs(x - ccx) > RANGE + 1 || Math.abs(z - ccz) > RANGE + 1) {
+      scene.remove(c.group); c.disposables.forEach(d => d.dispose && d.dispose()); chunks.delete(k); changed = true;
+    }
+  }
+  if (changed) refreshLists();
+}
+
+function groundAt(x, z) {
+  let h = heightAt(x, z);
+  for (const q of ramps) {
+    const dx = x - q.x, dz = z - q.z;
+    if (Math.abs(dx) > 14 || Math.abs(dz) > 14) continue;
+    const w = dx * q.sin + dz * q.cos, u = dx * q.cos - dz * q.sin;
+    if (w >= 0 && w <= q.L && Math.abs(u) <= q.W / 2) h = Math.max(h, q.base + q.H * w / q.L);
+  }
+  return h;
+}
+
+/* ───────────────────────── машина ───────────────────────── */
+const carRoot = new THREE.Group();
+const car = new THREE.Group();
+car.rotation.order = 'YXZ';
+carRoot.add(car);
+scene.add(carRoot);
+{
+  const body = new THREE.MeshLambertMaterial({ color: 0xece8de });
+  const glass = new THREE.MeshLambertMaterial({ color: 0x1f272e });
+  const dark = new THREE.MeshLambertMaterial({ color: 0x2a2a2c });
+  const lamp = new THREE.MeshBasicMaterial({ color: 0xfff2c0 });
+  const tail = new THREE.MeshBasicMaterial({ color: 0xd02a1e });
+  car.add(mesh(G.box, body, 2.0, 0.75, 4.5, 0, 0.95, 0));
+  car.add(mesh(G.box, body, 1.9, 0.12, 1.5, 0, 1.38, 1.4));
+  car.add(mesh(G.box, glass, 1.8, 0.75, 1.9, 0, 1.68, -0.15));
+  car.add(mesh(G.box, body, 1.7, 0.1, 1.8, 0, 2.08, -0.15));
+  car.add(mesh(G.box, dark, 1.9, 0.12, 0.2, 0, 0.55, 2.25));
+  car.add(mesh(G.box, dark, 1.9, 0.12, 0.2, 0, 0.55, -2.25));
+  for (const s of [-1, 1]) {
+    car.add(mesh(G.box, lamp, 0.4, 0.2, 0.06, s * 0.7, 1.05, 2.27, false));
+    car.add(mesh(G.box, tail, 0.3, 0.2, 0.06, s * 0.75, 1.1, -2.27, false));
+  }
+  car.add(mesh(G.box, dark, 1.6, 0.08, 1.4, 0, 2.2, -0.15));
+  car.add(mesh(G.box, dark, 0.5, 0.5, 0.15, 0, 0.9, -2.35));
+}
+const wheels = [];
+for (const [sx, sz, front] of [[-1, 1.5, 1], [1, 1.5, 1], [-1, -1.5, 0], [1, -1.5, 0]]) {
+  const pivot = new THREE.Group(); pivot.position.set(sx * 1.05, 0.5, sz);
+  const w = mesh(G.cyl, M.tire, 0.5, 0.42, 0.5, 0, 0, 0); w.rotation.z = Math.PI / 2;
+  pivot.add(w); car.add(pivot);
+  wheels.push({ pivot, w, front });
+}
+
+const S = {
+  x: 0, z: 0, y: heightAt(0, 0), vx: 0, vz: 0, vy: 0, h: 0,
+  grounded: true, steer: 0, pitch: 0, roll: 0, boost: 0, cd: 0,
+  camYaw: 0, wheelRot: 0, shake: 0, lastTrack: { x: 0, z: 0 }, trackSide: 0,
+};
+const input = { steer: 0, kSteer: 0, gas: false, brake: false, hand: false, jump: false, impulse: false, active: false };
+
+function reset() {
+  Object.assign(S, { x: 0, z: 0, vx: 0, vz: 0, vy: 0, h: 0, grounded: true, steer: 0, boost: 0, camYaw: 0, shake: 0 });
+  S.y = groundAt(0, 0);
+  S.lastTrack = { x: 0, z: 0 };
+}
+
+/* ───────────────────────── следы и пыль ───────────────────────── */
+const TRACKS = 900;
+const trackMesh = new THREE.InstancedMesh(
+  new THREE.PlaneGeometry(0.5, 1.3).rotateX(-Math.PI / 2),
+  new THREE.MeshBasicMaterial({ color: 0x7e5a34, transparent: true, opacity: 0.32, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }),
+  TRACKS);
+trackMesh.frustumCulled = false;
+{ const z = new THREE.Matrix4().makeScale(0, 0, 0); for (let i = 0; i < TRACKS; i++) trackMesh.setMatrixAt(i, z); }
+scene.add(trackMesh);
+let trackI = 0;
+const _o = new THREE.Object3D(), _q = new THREE.Quaternion(), _up = new THREE.Vector3(0, 1, 0), _n = new THREE.Vector3(), _qy = new THREE.Quaternion();
+function stampTrack(x, z, yaw) {
+  const e = 0.8, y = heightAt(x, z);
+  _n.set(heightAt(x - e, z) - heightAt(x + e, z), 2 * e, heightAt(x, z - e) - heightAt(x, z + e)).normalize();
+  _q.setFromUnitVectors(_up, _n);
+  _qy.setFromAxisAngle(_up, yaw);
+  _o.position.set(x, y + 0.14, z);
+  _o.quaternion.copy(_q).multiply(_qy);
+  _o.scale.set(1, 1, 1);
+  _o.updateMatrix();
+  trackMesh.setMatrixAt(trackI, _o.matrix);
+  trackI = (trackI + 1) % TRACKS;
+  trackMesh.instanceMatrix.needsUpdate = true;
+}
+
+const dustTex = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const g = c.getContext('2d'), gr = g.createRadialGradient(32, 32, 2, 32, 32, 31);
+  gr.addColorStop(0, 'rgba(255,255,255,.9)'); gr.addColorStop(.5, 'rgba(255,255,255,.4)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+})();
+const DUST = 150;
+const dust = [];
+for (let i = 0; i < DUST; i++) {
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: dustTex, color: 0xe3bf8a, transparent: true, depthWrite: false, opacity: 0 }));
+  s.visible = false; scene.add(s);
+  dust.push({ s, life: 0, max: 1, vx: 0, vy: 0, vz: 0, size: 1, a: 0 });
+}
+let dustI = 0;
+function emitDust(x, y, z, vx, vy, vz, size, alpha, life) {
+  const d = dust[dustI]; dustI = (dustI + 1) % DUST;
+  d.s.position.set(x, y, z); d.s.visible = true;
+  Object.assign(d, { life: 0, max: life, vx, vy, vz, size, a: alpha });
+}
+function updateDust(dt) {
+  for (const d of dust) {
+    if (!d.s.visible) continue;
+    d.life += dt;
+    const t = d.life / d.max;
+    if (t >= 1) { d.s.visible = false; continue; }
+    d.s.position.x += d.vx * dt; d.s.position.y += d.vy * dt; d.s.position.z += d.vz * dt;
+    d.vx *= 1 - 1.2 * dt; d.vz *= 1 - 1.2 * dt;
+    const sz = d.size * (1 + t * 2.4);
+    d.s.scale.set(sz, sz, 1);
+    d.s.material.opacity = d.a * (1 - t) * Math.min(1, t * 8);
+  }
+}
+
+/* ───────────────────────── звук ───────────────────────── */
+let actx, osc, osc2, gainNode, lp;
+function startAudio() {
+  if (actx) return;
+  try {
+    actx = new (window.AudioContext || window.webkitAudioContext)();
+    osc = actx.createOscillator(); osc.type = 'sawtooth';
+    osc2 = actx.createOscillator(); osc2.type = 'square';
+    lp = actx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 420;
+    gainNode = actx.createGain(); gainNode.gain.value = 0.0;
+    osc.connect(lp); osc2.connect(lp); lp.connect(gainNode); gainNode.connect(actx.destination);
+    osc.start(); osc2.start();
+  } catch (e) { actx = null; }
+}
+function updateAudio(speed, gas) {
+  if (!actx) return;
+  const f = 38 + speed * 2.6 + (gas ? 14 : 0);
+  osc.frequency.setTargetAtTime(f, actx.currentTime, 0.06);
+  osc2.frequency.setTargetAtTime(f * 0.5, actx.currentTime, 0.06);
+  lp.frequency.setTargetAtTime(260 + speed * 14, actx.currentTime, 0.1);
+  gainNode.gain.setTargetAtTime(0.035 + (gas ? 0.03 : 0), actx.currentTime, 0.1);
+}
+
+/* ───────────────────────── ввод ───────────────────────── */
+const $ = id => document.getElementById(id);
+const keys = new Set();
+addEventListener('keydown', e => {
+  if (e.repeat) return;
+  keys.add(e.code);
+  if (e.code === 'Space') input.jump = true;
+  if (e.code === 'KeyE') input.impulse = true;
+  if (e.code === 'KeyR') reset();
+  if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
+});
+addEventListener('keyup', e => keys.delete(e.code));
+function pollKeys() {
+  const l = keys.has('KeyA') || keys.has('ArrowLeft'), r = keys.has('KeyD') || keys.has('ArrowRight');
+  input.kSteer = (r ? 1 : 0) - (l ? 1 : 0);
+  input.kGas = keys.has('KeyW') || keys.has('ArrowUp');
+  input.kBrake = keys.has('KeyS') || keys.has('ArrowDown');
+  input.kHand = keys.has('ShiftLeft') || keys.has('ShiftRight');
+}
+
+// слайдер руления
+{
+  const pad = $('steer'), knob = pad.querySelector('.knob');
+  let id = null, sy = 0, fired = false;
+  const setX = e => {
+    const r = pad.getBoundingClientRect(), half = r.width / 2 - 28;
+    input.steer = clamp((e.clientX - (r.left + r.width / 2)) / half, -1, 1);
+    knob.style.left = (50 + input.steer * (half / r.width) * 100) + '%';
+  };
+  pad.addEventListener('pointerdown', e => { id = e.pointerId; pad.setPointerCapture(id); sy = e.clientY; fired = false; setX(e); });
+  pad.addEventListener('pointermove', e => {
+    if (e.pointerId !== id) return;
+    setX(e);
+    if (!fired) {
+      const dy = e.clientY - sy;
+      if (dy < -34) { input.jump = true; fired = true; }
+      else if (dy > 34) { input.impulse = true; fired = true; }
+    }
+  });
+  const end = e => { if (e.pointerId !== id) return; id = null; input.steer = 0; knob.style.left = '50%'; };
+  pad.addEventListener('pointerup', end); pad.addEventListener('pointercancel', end);
+}
+// газ / тормоз
+{
+  const gas = $('gas'), br = $('brake');
+  const bindHold = (el, on, off) => {
+    el.addEventListener('pointerdown', e => { el.setPointerCapture(e.pointerId); el.classList.add('on'); on(e); });
+    const up = () => { el.classList.remove('on'); off(); };
+    el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
+  };
+  bindHold(gas, () => { input.gas = true; gas.style.setProperty('--fill', '100%'); }, () => { input.gas = false; gas.style.setProperty('--fill', '0%'); });
+  let by = 0;
+  br.addEventListener('pointermove', e => { if (input.brake && e.clientY - by > 26) input.hand = true; });
+  bindHold(br, e => { input.brake = true; by = e.clientY; }, () => { input.brake = false; input.hand = false; });
+}
+$('home').addEventListener('pointerdown', e => { e.stopPropagation(); reset(); });
+$('intro').addEventListener('pointerdown', () => {
+  $('intro').classList.add('hide'); input.active = true; startAudio();
+  if (actx && actx.state === 'suspended') actx.resume();
+});
+document.addEventListener('gesturestart', e => e.preventDefault());
+
+/* ───────────────────────── физика ───────────────────────── */
+const GRAV = 22, MAXV = 44, WHEELBASE = 3.0;
+const hudStats = $('stats');
+let fpsAcc = 0, fpsN = 0, fpsShown = 60, hudT = 0;
+
+function physics(dt) {
+  const steerT = clamp(input.steer + input.kSteer, -1, 1);
+  S.steer += (steerT - S.steer) * Math.min(1, dt * (Math.abs(input.steer) > 0.001 ? 18 : 7));
+  const gas = input.gas || input.kGas, brake = input.brake || input.kBrake, hand = input.hand || input.kHand;
+
+  let fx = Math.sin(S.h), fz = Math.cos(S.h);
+  let vf = S.vx * fx + S.vz * fz;
+  let vl = S.vx * Math.cos(S.h) - S.vz * Math.sin(S.h);
+
+  if (input.impulse && S.cd <= 0) { S.boost = 1.3; S.cd = 3.2; vf += 12; S.shake = 0.5; }
+  input.impulse = false;
+  S.cd = Math.max(0, S.cd - dt); S.boost = Math.max(0, S.boost - dt);
+  const vmax = MAXV * (S.boost > 0 ? 1.4 : 1);
+
+  if (S.grounded) {
+    if (input.jump) { S.vy = 9; S.grounded = false; S.shake = Math.max(S.shake, 0.2); }
+    if (gas) vf += (S.boost > 0 ? 34 : 17) * Math.max(0, 1 - vf / vmax) * dt * 2.2;
+    if (brake) vf = vf > 0.8 ? Math.max(0, vf - 32 * dt) : Math.max(-9, vf - 9 * dt);
+    vf -= vf * 0.16 * dt + vf * Math.abs(vf) * 0.0011 * dt;
+    // уклон
+    const e = 1.2, gx = (heightAt(S.x + e, S.z) - heightAt(S.x - e, S.z)) / (2 * e), gz = (heightAt(S.x, S.z + e) - heightAt(S.x, S.z - e)) / (2 * e);
+    vf -= (gx * fx + gz * fz) * 9.8 * 0.55 * dt;
+    vl -= (gx * Math.cos(S.h) - gz * Math.sin(S.h)) * 9.8 * 0.55 * dt;
+    // руль
+    const maxSteer = 0.62 / (1 + Math.abs(vf) / 22);
+    const yaw = (vf / WHEELBASE) * Math.tan(S.steer * maxSteer) * (hand ? 1.5 : 1);
+    S.h -= yaw * dt;
+    // сцепление: ручник = дрифт
+    const grip = hand ? 0.9 : (Math.abs(S.steer) > 0.6 && Math.abs(vf) > 28 ? 4.2 : 6.5);
+    vl *= Math.exp(-grip * dt);
+    if (hand) vf *= Math.exp(-0.35 * dt);
+    else vf -= Math.abs(vl) * 0.35 * dt * Math.sign(vf);
+    S.wheelRot += vf * dt / 0.5;
+  } else {
+    S.vy -= GRAV * dt;
+    S.h -= (vf / WHEELBASE) * Math.tan(S.steer * 0.3) * 0.25 * dt;
+  }
+  input.jump = false;
+
+  fx = Math.sin(S.h); fz = Math.cos(S.h);
+  const lx = Math.cos(S.h), lz = -Math.sin(S.h);
+  S.vx = fx * vf + lx * vl;
+  S.vz = fz * vf + lz * vl;
+  S.x += S.vx * dt; S.z += S.vz * dt;
+
+  // столкновения
+  for (const c of colliders) {
+    const dx = S.x - c.x, dz = S.z - c.z;
+    if (Math.abs(dx) > c.r + 3 || Math.abs(dz) > c.r + 3) continue;
+    const rr = c.r + 1.5, d2 = dx * dx + dz * dz;
+    if (d2 >= rr * rr || d2 < 1e-6) continue;
+    if (S.y - groundAt(c.x, c.z) > c.h) continue;
+    const d = Math.sqrt(d2), nx = dx / d, nz = dz / d;
+    S.x += nx * (rr - d); S.z += nz * (rr - d);
+    const vn = S.vx * nx + S.vz * nz;
+    if (vn < 0) {
+      S.vx -= nx * vn * 1.35; S.vz -= nz * vn * 1.35;
+      S.vx *= 0.82; S.vz *= 0.82;
+      S.shake = Math.max(S.shake, clamp(-vn / 30, 0.1, 0.9));
+    }
+  }
+
+  // вертикаль
+  const g0 = groundAt(S.x, S.z);
+  if (S.grounded) {
+    const surfV = (g0 - S.y) / dt;
+    if (surfV < S.vy - GRAV * dt * 1.6 && S.y - g0 < 3 && surfV < -3) { S.grounded = false; S.vy = Math.max(S.vy, surfV * 0.5); }
+    else { S.vy = lerp(S.vy, surfV, 0.5); S.y = g0; }
+  }
+  if (!S.grounded) {
+    S.y += S.vy * dt;
+    if (S.y <= g0) {
+      if (S.vy < -7) {
+        S.shake = Math.max(S.shake, clamp(-S.vy / 22, 0.15, 0.8));
+        for (let i = 0; i < 10; i++) emitDust(S.x + (Math.random() - .5) * 3, g0 + 0.5, S.z + (Math.random() - .5) * 3, (Math.random() - .5) * 8, 1 + Math.random() * 2, (Math.random() - .5) * 8, 3, 0.6, 1.2);
+      }
+      S.y = g0; S.grounded = true; S.vy = 0;
+    }
+  }
+  return { vf, vl, hand, gas };
+}
+
+/* ───────────────────────── кадр ───────────────────────── */
+let last = performance.now(), tAcc = 0, stampDist = 0;
+const camPos = new THREE.Vector3(0, 40, -20), camLook = new THREE.Vector3();
+let camInit = false;
+
+function frame(now) {
+  requestAnimationFrame(frame);
+  let dt = Math.min((now - last) / 1000, 1 / 20); last = now;
+  if (dt <= 0) return;
+  fpsAcc += dt; fpsN++;
+  if (fpsAcc > 0.5) { fpsShown = Math.round(fpsN / fpsAcc); fpsAcc = 0; fpsN = 0; }
+  tAcc += dt;
+
+  pollKeys();
+  let info = { vf: 0, vl: 0, hand: false, gas: false };
+  if (input.active) { const steps = dt > 1 / 45 ? 2 : 1; for (let i = 0; i < steps; i++) info = physics(dt / steps); }
+  else { S.y = groundAt(S.x, S.z); }
+
+  if (Math.abs(S.x / T_C - (tOx + T_N / 2)) > 8 || Math.abs(S.z / T_C - (tOz + T_N / 2)) > 8) rebuildTerrain(S.x, S.z);
+  updateChunks(S.x, S.z, camInit ? 2 : 100);
+
+  // поза машины
+  const d = 1.6, fx = Math.sin(S.h), fz = Math.cos(S.h), lx = Math.cos(S.h), lz = -Math.sin(S.h);
+  let tp = 0, tr = 0;
+  if (S.grounded) {
+    const hf = heightAt(S.x + fx * d, S.z + fz * d), hb = heightAt(S.x - fx * d, S.z - fz * d);
+    const hl = heightAt(S.x + lx * 1.0, S.z + lz * 1.0), hr = heightAt(S.x - lx * 1.0, S.z - lz * 1.0);
+    tp = -Math.atan2(hf - hb, 2 * d); tr = Math.atan2(hl - hr, 2.0);
+  } else tp = clamp(-S.vy * 0.03, -0.35, 0.35);
+  S.pitch = lerp(S.pitch, tp, Math.min(1, dt * (S.grounded ? 12 : 3)));
+  S.roll = lerp(S.roll, tr, Math.min(1, dt * 12));
+  carRoot.position.set(S.x, S.y, S.z);
+  car.rotation.set(S.pitch, S.h, S.roll);
+  for (const w of wheels) { w.w.rotation.x = S.wheelRot; w.pivot.rotation.y = w.front ? -S.steer * 0.4 : 0; }
+
+  // следы и пыль
+  const speed = Math.hypot(S.vx, S.vz);
+  const slip = Math.abs(info.vl);
+  if (S.grounded && speed > 2) {
+    stampDist += speed * dt;
+    if (stampDist > 1.0 && (slip > 1.2 || speed > 8)) {
+      stampDist = 0;
+      const yaw = Math.atan2(S.vx, S.vz);
+      for (const s of [-1, 1]) stampTrack(S.x - fx * 1.5 + lx * s * 1.05, S.z - fz * 1.5 + lz * s * 1.05, yaw);
+    }
+    const rate = (speed * 0.9 + slip * 6 + (S.boost > 0 ? 40 : 0)) * (info.hand ? 1.8 : 1);
+    let n = rate * dt; const whole = Math.floor(n);
+    if (Math.random() < n - whole) n = whole + 1; else n = whole;
+    for (let i = 0; i < n; i++) {
+      const s = Math.random() < .5 ? -1 : 1, px = S.x - fx * 1.7 + lx * s * 1.0, pz = S.z - fz * 1.7 + lz * s * 1.0;
+      emitDust(px, heightAt(px, pz) + 0.3, pz,
+        S.vx * 0.25 - fx * 2 + (Math.random() - .5) * 3, 0.8 + Math.random() * 1.6 + slip * 0.08, S.vz * 0.25 - fz * 2 + (Math.random() - .5) * 3,
+        1.6 + Math.random() * 1.6 + slip * 0.12, 0.38 + Math.min(0.3, slip * 0.02), 1.0 + Math.random() * 0.9 + slip * 0.05);
+    }
+  }
+  updateDust(dt);
+  updateAudio(speed, info.gas);
+  for (const s of spinners) s.o.rotation.z += s.s * dt;
+
+  // камера
+  const lookDir = speed > 6 ? Math.atan2(S.vx, S.vz) : S.h;
+  S.camYaw += angDiff(S.h * 0.55 + lookDir * 0.45, S.camYaw) * Math.min(1, dt * 2.2);
+  const dist = 17 + speed * 0.1, hgt = 21 + speed * 0.12;
+  const cx = S.x - Math.sin(S.camYaw) * dist, cz = S.z - Math.cos(S.camYaw) * dist;
+  const cy = Math.max(S.y + hgt, heightAt(cx, cz) + 5);
+  if (!camInit) { camPos.set(cx, cy, cz); camInit = true; }
+  camPos.x = lerp(camPos.x, cx, Math.min(1, dt * 5)); camPos.z = lerp(camPos.z, cz, Math.min(1, dt * 5)); camPos.y = lerp(camPos.y, cy, Math.min(1, dt * 4));
+  S.shake = Math.max(0, S.shake - dt * 1.8);
+  const sh = S.shake * 0.6;
+  camera.position.set(camPos.x + (Math.random() - .5) * sh, camPos.y + (Math.random() - .5) * sh, camPos.z + (Math.random() - .5) * sh);
+  camLook.set(S.x + S.vx * 0.25, S.y + 1, S.z + S.vz * 0.25);
+  camera.lookAt(camLook);
+  const fov = 52 + Math.min(10, speed * 0.16) + (S.boost > 0 ? 6 : 0);
+  if (Math.abs(camera.fov - fov) > 0.05) { camera.fov = lerp(camera.fov, fov, Math.min(1, dt * 4)); camera.updateProjectionMatrix(); }
+
+  // солнце и тени следуют за машиной
+  sun.target.position.set(S.x, S.y, S.z);
+  sun.position.set(S.x + SUN_DIR.x * 90, S.y + SUN_DIR.y * 90, S.z + SUN_DIR.z * 90);
+
+  // HUD
+  hudT += dt;
+  if (hudT > 0.1) {
+    hudT = 0;
+    hudStats.textContent = String(Math.round(speed * 3.6)).padStart(3, '0') + ' км/ч · ' + fpsShown + ' FPS';
+  }
+
+  renderer.render(scene, camera);
+}
+
+/* ───────────────────────── старт ───────────────────────── */
+rebuildTerrain(0, 0);
+updateChunks(0, 0, 100);
+reset();
+requestAnimationFrame(t => { last = t; frame(t); });
+
+// для автотестов
+window.__game = { S, input, reset, heightAt, groundAt, get chunks() { return chunks.size; }, get colliders() { return colliders.length; } };
+})();
+</script>
+</body>
+</html>
