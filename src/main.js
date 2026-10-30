@@ -328,6 +328,11 @@ async function boot() {
         rig.addShake(Math.min(0.9, ev.strength * 0.05));
         audio.impact(ev.strength, 'land');
         effects.burst(car.pos.x, car.pos.y, car.pos.z, Math.min(40, 8 + ev.strength * 2), 3 + ev.strength * 0.3);
+        if (ev.spin > 300) {
+          const turns = Math.round(ev.spin / 180) * 180;
+          drift.bonus(`ВРАЩЕНИЕ ${turns}°`, Math.round(turns * 2));
+          hud.bigText(`${turns}°`, 900);
+        }
         if (ev.air > 0.7) {
           const pts = Math.round(ev.air * 450);
           drift.bonus('ПОЛЁТ', pts);

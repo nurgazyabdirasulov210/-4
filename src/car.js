@@ -21,11 +21,13 @@ export const STYLES = {
     label: 'АРКАДА', rearDrive: 0.68, muRear: 0.97, hb: 0.42, capDrive: 0.6, capMin: 0.35,
     BR: 7.0, CR: 1.6, steerLow: 0.62, steerHigh: 0.22, counter: 0.55, assist: 3.2,
     betaLimit: 0.85, betaK: 6, yawDamp: 0.35, kick: 0,
+    airSpin: 6.5, airAcc: 10, donut: 2.6, donutNeedsHb: true, reverseSlide: 2.6,
   },
   drift: {
     label: 'ДРИФТ', rearDrive: 0.9, muRear: 0.86, hb: 0.3, capDrive: 0.85, capMin: 0.28,
     BR: 8.5, CR: 1.8, steerLow: 0.7, steerHigh: 0.42, counter: 0.7, assist: 5.0,
-    betaLimit: 0.85, betaK: 80, yawDamp: 0.25, kick: 1.2, settle: 1.5, settleGrip: 1.0,
+    betaLimit: 1.45, betaK: 3, yawDamp: 0.25, kick: 1.4, settle: 1.2, settleGrip: 1.0,
+    airSpin: 9.5, airAcc: 15, donut: 3.4, donutNeedsHb: false, reverseSlide: 2.0,
   },
 };
 
@@ -55,6 +57,7 @@ export class Car {
     this.grounded = true;
     this.contact = 1;
     this.airTime = 0;
+    this.airRot = 0;
     this.groundH = 0;
     this.up = new THREE.Vector3(0, 1, 0);
     this.quat = new THREE.Quaternion();
@@ -136,6 +139,7 @@ export class Car {
       if (vyFree > groundVy + 2.6 || (input.jump && this.jumpCd <= 0)) {
         this.grounded = false;
         this.airTime = 0;
+        this.airRot = 0;
         this.vel.y = Math.max(vyFree, groundVy);
         if (input.jump && this.jumpCd <= 0) {
           this.vel.y = Math.max(this.vel.y, 0) + 7.2;
@@ -149,6 +153,7 @@ export class Car {
       }
     } else {
       this.airTime += dt;
+      this.airRot += Math.abs(this.yawRate) * dt;
       this.vel.y -= AIR_G * dt;
       this.pos.y += this.vel.y * dt;
       if (this.pos.y <= gH) {
@@ -157,7 +162,7 @@ export class Car {
         this.vel.y = groundVy;
         this.grounded = true;
         if (impact > 2.5) {
-          this.events.push({ type: 'land', strength: impact, air: this.airTime });
+          this.events.push({ type: 'land', strength: impact, air: this.airTime, spin: this.airRot * 57.3 });
           this.heaveV -= Math.min(impact, 20) * 0.18;
           this.pitchV += (Math.random() - 0.5) * impact * 0.05;
           if (impact > 9) { this.vel.x *= 0.95; this.vel.z *= 0.95; }
@@ -197,6 +202,9 @@ export class Car {
     this.throttle = input.throttle;
     this.brake = input.brake;
     if (input.throttle > 0) Fdrive = input.throttle * Math.min(maxF, P / Math.max(Math.abs(vf), 1));
+    // Едем задом после разворота на 180°: колёса буксуют, машина долго катится задом наперёд
+    this.reverseSliding = vf < -3 && input.brake <= 0;
+    if (this.reverseSliding && Fdrive > 0) Fdrive = Math.min(Fdrive, m * T.reverseSlide);
     if (input.brake > 0) {
       if (vf > 1.2) Fbrake = input.brake * 13000;
       else if (vf > -13) Fdrive -= input.brake * 7000;
@@ -216,7 +224,11 @@ export class Car {
     const muF = mu * 1.05;
     // без руля и ручника корма возвращает сцепление — машина выравнивается
     const slideIntent = clamp(Math.abs(input.steer) * 1.6 + (hb ? 1 : 0), 0, 1);
-    const muR = mu * lerp(T.settleGrip ?? T.muRear, T.muRear, slideIntent) * (hb ? T.hb : 1);
+    // «Пончик»/разворот на месте: газ + полный руль на малой скорости (в аркаде — ещё и ручник)
+    const donut = this.grounded && input.throttle > 0 && Math.abs(input.steer) > 0.4 && speed < 16
+      && (!T.donutNeedsHb || hb);
+    this.donut = donut;
+    const muR = mu * lerp(T.settleGrip ?? T.muRear, T.muRear, slideIntent) * (hb ? T.hb : 1) * (donut ? 0.4 : 1);
 
     // Продольные силы
     const sv = Math.sign(vf) || 0;
@@ -261,7 +273,7 @@ export class Car {
     // Сопротивление: качение (песок вязкий) + воздух
     const roll = rolling * m * G * clamp(vf / 1.5, -1, 1) * c01;
     Flong -= roll;
-    if (input.throttle <= 0 && !this.boosting) Flong -= m * 0.7 * clamp(vf / 2, -1, 1) * c01; // торможение двигателем
+    if (input.throttle <= 0 && !this.boosting) Flong -= m * (vf < 0 ? 0.35 : 0.7) * clamp(vf / 2, -1, 1) * c01; // торможение двигателем
     const aero = 0.62;
     let ax = (fx * Flong + lx * Flat) / m - (aero * this.vel.x * speed) / m;
     let az = (fz * Flong + lz * Flat) / m - (aero * this.vel.z * speed) / m;
@@ -275,9 +287,16 @@ export class Car {
     this.vel.z += az * dt;
     this.yawRate += (torque / this.inertia) * dt;
     if (!this.grounded) {
-      this.yawRate *= Math.exp(-0.6 * dt);
-      this.yawRate += -input.steer * 1.4 * dt;
+      // В полёте руль раскручивает машину: можно сделать 360–720°
+      if (Math.abs(input.steer) > 0.05) {
+        const tgt = -input.steer * T.airSpin;
+        this.yawRate += clamp(tgt - this.yawRate, -T.airAcc * dt, T.airAcc * dt);
+      } else this.yawRate *= Math.exp(-0.25 * dt);
     } else {
+      if (donut) {
+        const tgt = -Math.sign(input.steer) * T.donut * Math.min(1, Math.abs(input.steer) * 1.4);
+        this.yawRate += clamp(tgt - this.yawRate, -6 * dt, 6 * dt);
+      }
       this.yawRate *= Math.exp(-(T.yawDamp + (T.settle || 0) * (1 - Math.min(1, Math.abs(input.steer) * 2))) * dt);
       // «Вброс» в занос: резкий руль на скорости закручивает корму
       if (T.kick && this.grounded && vf > 12 && Math.abs(input.steer) > 0.6 && Math.abs(beta) < 0.5) {

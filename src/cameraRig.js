@@ -43,7 +43,12 @@ export class CameraRig {
     const sp = Math.hypot(vx, vz);
     const target = new THREE.Vector3();
     if (this.mode === 3) target.copy(fwd);
-    else if (sp > 4 && car.vf > -1) target.set(vx / sp, 0, vz / sp).lerp(fwd, 0.35).normalize();
+    else if (sp > 4) {
+      // камера идёт за движением: в заносе, «пончике» и при езде задом наперёд
+      target.set(vx / sp, 0, vz / sp);
+      if (car.vf > 0) target.lerp(fwd, 0.35);
+      target.normalize();
+    }
     else target.copy(fwd).multiplyScalar(car.vf < -2 ? 1 : 1);
     const k = instant ? 1 : 1 - Math.exp(-(this.mode === 3 ? 20 : 3.2) * dt);
     this.dir.lerp(target, k).normalize();
