@@ -1,6 +1,6 @@
 // Процедурная пустыня: барханы, сглаженная трасса, лагерь, шейдер песка.
 import * as THREE from 'three';
-import { WORLD_SIZE, HALF, QUALITY, WIND, IS_MOBILE } from './config.js';
+import { WORLD_SIZE, HALF, QUALITY, WIND } from './config.js';
 import { smoothstep, lerp, clamp } from './noise.js';
 import { SAND_COMMON, SAND_FRAGMENT_COLOR, SAND_FRAGMENT_NORMAL, SAND_FRAGMENT_EMISSIVE } from './shaders/sand.js';
 
@@ -240,7 +240,7 @@ export class Terrain {
     this.uniforms = uniforms;
 
     const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.93, metalness: 0.0 });
-    if (IS_MOBILE) mat.defines = { SAND_LOW: '' };
+    if (QUALITY.sandLow) mat.defines = { SAND_LOW: '' };
     mat.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, uniforms);
       shader.vertexShader = shader.vertexShader
@@ -256,7 +256,7 @@ export class Terrain {
         .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\n' + SAND_FRAGMENT_NORMAL)
         .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n' + SAND_FRAGMENT_EMISSIVE);
     };
-    mat.customProgramCacheKey = () => (IS_MOBILE ? 'sand-low' : 'sand-v1');
+    mat.customProgramCacheKey = () => (QUALITY.sandLow ? 'sand-low' : 'sand-v1');
 
     const mesh = new THREE.Mesh(geo, mat);
     mesh.receiveShadow = true;

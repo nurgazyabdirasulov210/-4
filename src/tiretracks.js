@@ -7,7 +7,7 @@ const MAX_STAMPS = 1024;
 export class TireTracks {
   constructor(renderer) {
     this.renderer = renderer;
-    this.res = QUALITY.tracksRes;
+    this.res = Math.min(QUALITY.tracksRes, renderer.capabilities.maxTextureSize || 4096);
     this.rt = new THREE.WebGLRenderTarget(this.res, this.res, {
       type: THREE.UnsignedByteType,
       minFilter: THREE.LinearFilter,

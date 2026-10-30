@@ -7,6 +7,11 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="theme-color" content="#c99a62">
   <title>Dune Drift — дрифт и гонки в открытой пустыне</title>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Dune Drift">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <link rel="stylesheet" href="style.css">
   <script type="importmap">
     {
@@ -33,6 +38,7 @@
         <button class="pill btn" id="btnTime" title="Время суток (N)">ВРЕМЯ</button>
         <button class="pill btn" id="btnSound" title="Звук (M)">ЗВУК</button>
         <button class="pill btn" id="btnReset" title="Вернуть машину (R)">⟲</button>
+        <button class="pill btn" id="btnMenu" title="Меню (Esc)">☰</button>
       </div>
       <div id="totalScore" class="pill">ОЧКИ 0</div>
     </div>
@@ -76,6 +82,13 @@
       <div class="sub">дрифт · гонки · открытая пустыня</div>
       <div id="loading">Генерация мира…</div>
       <button id="play" class="play hidden">ПОЕХАЛИ</button>
+      <div class="settings">
+        <div class="slbl">ГРАФИКА</div>
+        <div id="quality"></div>
+        <label class="chk"><input type="checkbox" id="autoRes"> Снижать разрешение, если тормозит</label>
+      </div>
+      <button id="install" class="install hidden">⬇ УСТАНОВИТЬ НА ТЕЛЕФОН</button>
+      <div id="installHint" class="ihint hidden"></div>
       <div class="controls desk">
         <div><b>W / ↑</b> газ</div><div><b>S / ↓</b> тормоз / назад</div>
         <div><b>A D / ← →</b> руль</div><div><b>ПРОБЕЛ</b> ручник</div>
@@ -91,6 +104,8 @@
       <div class="tip">Заносы приносят очки и заряжают импульс. Гребни барханов и трамплины — для полётов.</div>
     </div>
   </div>
+
+  <div id="rotate"><div>⟳</div>Поверните телефон горизонтально</div>
 
   <script type="module" src="src/main.js"></script>
 </body>

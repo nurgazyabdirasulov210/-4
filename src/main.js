@@ -1,6 +1,7 @@
 // Точка входа: сборка мира, игровой цикл, освещение, время суток, события.
 import * as THREE from 'three';
-import { QUALITY, IS_MOBILE, SEED, WIND } from './config.js';
+import { QUALITY, QUALITY_NAME, PRESETS, AUTO_RES, save, IS_MOBILE, SEED, WIND } from './config.js';
+import { setupApp, enterFullscreen } from './app.js';
 import { Simplex2, clamp } from './noise.js';
 import { Track } from './track.js';
 import { Terrain } from './terrain.js';
@@ -38,6 +39,7 @@ const PALETTES = {
 const loadingEl = document.getElementById('loading');
 const playBtn = document.getElementById('play');
 if (IS_MOBILE) document.body.classList.add('touch');
+setupApp();
 
 const nextFrame = () => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
 
@@ -214,15 +216,51 @@ async function boot() {
   loadingEl.classList.add('hidden');
   playBtn.classList.remove('hidden');
   let running = false;
+  let started = false;
+  const menuEl = document.getElementById('menu');
   const start = () => {
-    document.getElementById('menu').classList.add('hidden');
+    menuEl.classList.add('hidden');
     document.getElementById('hud').classList.remove('hidden');
     audio.init();
+    if (IS_MOBILE) enterFullscreen();
     running = true;
-    hud.bigText('ПОЕХАЛИ!', 1000);
+    if (!started) hud.bigText('ПОЕХАЛИ!', 1000);
+    started = true;
+    clock.getDelta();
+  };
+  const openMenu = () => {
+    running = false;
+    playBtn.textContent = 'ПРОДОЛЖИТЬ';
+    menuEl.classList.remove('hidden');
   };
   playBtn.addEventListener('click', start);
-  addEventListener('keydown', (e) => { if (!running && (e.code === 'Enter' || e.code === 'Space')) start(); });
+  addEventListener('keydown', (e) => {
+    if (!running && (e.code === 'Enter' || e.code === 'Space')) start();
+    else if (running && (e.code === 'Escape' || e.code === 'KeyP')) openMenu();
+  });
+  bindBtn('btnMenu', openMenu);
+
+  // Настройки графики: смена пресета требует перезапуска (пересоздаются рельеф и текстуры)
+  const qWrap = document.getElementById('quality');
+  for (const [key, p] of Object.entries(PRESETS)) {
+    const b = document.createElement('button');
+    b.className = 'qbtn' + (key === QUALITY_NAME ? ' on' : '');
+    b.textContent = p.label;
+    b.addEventListener('click', () => {
+      if (key === QUALITY_NAME) return;
+      save('dd_quality', key);
+      location.reload();
+    });
+    qWrap.appendChild(b);
+  }
+  const autoRes = document.getElementById('autoRes');
+  autoRes.checked = AUTO_RES;
+  let autoResOn = AUTO_RES;
+  autoRes.addEventListener('change', () => {
+    autoResOn = autoRes.checked;
+    save('dd_autores', autoResOn ? '1' : '0');
+    if (!autoResOn) { pixelRatio = Math.min(devicePixelRatio, QUALITY.maxPixelRatio); renderer.setPixelRatio(pixelRatio); onResize(); }
+  });
 
   // Позиция в гонке: считаем пересечения линии старта
   const playerProgress = () => {
@@ -360,6 +398,7 @@ async function boot() {
 
     // Динамическое разрешение: держим ~60 FPS
     fpsT += dt; fpsN++;
+    if (fpsT > 2 && !autoResOn) { fpsT = 0; fpsN = 0; }
     if (fpsT > 2) {
       const fps = fpsN / fpsT;
       let pr = pixelRatio;

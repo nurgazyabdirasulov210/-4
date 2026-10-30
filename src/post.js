@@ -73,7 +73,7 @@ export class Post {
     const size = renderer.getDrawingBufferSize(new THREE.Vector2());
     const rt = new THREE.WebGLRenderTarget(size.x, size.y, {
       type: THREE.HalfFloatType,
-      samples: QUALITY.msaa,
+      samples: renderer.capabilities.isWebGL2 ? QUALITY.msaa : 0,
     });
     this.composer = new EffectComposer(renderer, rt);
     this.composer.addPass(new RenderPass(scene, camera));
