@@ -328,6 +328,12 @@ async function boot() {
     return prog.laps * track.count + n;
   };
 
+  // Дрифт-зона
+  const zone = { def: terrain.bowl, inside: false, score: 0, best: Number(load('dd_zone_best', 0)) || 0 };
+  const zonePill = document.getElementById('zonePill');
+  const zoneScoreEl = document.getElementById('zoneScore');
+  const zoneBestEl = document.getElementById('zoneBest');
+
   // Игровой цикл
   const clock = new THREE.Clock();
   const STEP = 1 / 120;
@@ -405,11 +411,41 @@ async function boot() {
 
     world.update(dt, car.pos);
 
+    // Дрифт-зона в чаше: очки ×2, рекорд заезда по зоне
+    if (zone.def) {
+      const inside = Math.hypot(car.pos.x - zone.def.x, car.pos.z - zone.def.z) < zone.def.r * 1.12;
+      if (inside !== zone.inside) {
+        zone.inside = inside;
+        zonePill.classList.toggle('hidden', !inside);
+        if (inside) { drift.zoneMult = 2; zone.score = 0; hud.toast('ДРИФТ-ЗОНА: очки ×2', 'cyan'); }
+        else {
+          // незавершённый занос засчитывается в зону при выезде
+          if (drift.current > 50) zone.score += Math.round(drift.current * drift.mult * 2);
+          drift.bank();
+          drift.zoneMult = 1;
+          if (zone.score > 0) {
+            const rec = zone.score > zone.best;
+            if (rec) { zone.best = zone.score; save('dd_zone_best', String(zone.best)); }
+            hud.toast(`Заезд по зоне: ${zone.score.toLocaleString('ru-RU')}${rec ? ' — РЕКОРД!' : ''}`, 'good');
+            if (rec) hud.bigText('РЕКОРД ЗОНЫ!', 1200);
+          }
+        }
+      }
+      if (inside) {
+        const live = zone.score + Math.round(drift.current * drift.mult * 2);
+        zoneScoreEl.textContent = live.toLocaleString('ru-RU');
+        zoneBestEl.textContent = zone.best.toLocaleString('ru-RU');
+      }
+    }
+
     // Дрифт и гонка
     drift.update(dt, car);
     if (drift.active) car.boost = Math.min(1, car.boost + dt * 0.05 * drift.mult);
     for (const ev of drift.events) {
-      if (ev.type === 'bank') hud.toast(`+${ev.pts.toLocaleString('ru-RU')} ДРИФТ <small>x${ev.mult}</small>`, 'good');
+      if (ev.type === 'bank') {
+        hud.toast(`+${ev.pts.toLocaleString('ru-RU')} ДРИФТ <small>x${ev.mult}${ev.zone > 1 ? ' · зона ×' + ev.zone : ''}</small>`, 'good');
+        if (zone.inside) zone.score += ev.pts;
+      }
       else if (ev.type === 'fail') hud.toast(`ДРИФТ СОРВАН −${ev.pts.toLocaleString('ru-RU')}`, 'bad');
       else if (ev.type === 'bonus') hud.toast(`${ev.label} +${ev.pts}`, 'cyan');
     }

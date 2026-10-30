@@ -190,9 +190,10 @@ export class DriftScore {
 
   bank() {
     if (this.current > 50) {
-      const pts = Math.round(this.current * this.mult);
+      const zone = this.zoneMult || 1;
+      const pts = Math.round(this.current * this.mult * zone);
       this.total += pts;
-      this.events.push({ type: 'bank', pts, mult: this.mult });
+      this.events.push({ type: 'bank', pts, mult: this.mult, zone });
       try { localStorage.setItem('dd_total', String(this.total)); } catch (e) { /* ignore */ }
     }
     this.reset();
