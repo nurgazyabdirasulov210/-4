@@ -1,5 +1,6 @@
 // Режим «На трассу»: чекпоинты, круги, лучший круг, позиция; очки за дрифт и полёты.
 import * as THREE from 'three';
+import { load } from './config.js';
 
 const gateVert = /* glsl */ `
   varying vec2 vUv;
@@ -79,7 +80,7 @@ export class Race {
     this.lap = 1;
     this.next = 1;
     this.time = 0;
-    this.best = Number(localStorage.getItem('dd_best') || 0) || 0;
+    this.best = Number(load('dd_best', 0)) || 0;
     this.countdown = 0;
     this.laps = [];
     this.lastLap = 0;
@@ -163,7 +164,7 @@ export class Race {
 
 export class DriftScore {
   constructor() {
-    this.total = Number(localStorage.getItem('dd_total') || 0) || 0;
+    this.total = Number(load('dd_total', 0)) || 0;
     this.current = 0;
     this.mult = 1;
     this.chain = 0;

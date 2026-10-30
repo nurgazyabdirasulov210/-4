@@ -16,7 +16,7 @@ export const PRESETS = {
   low: { label: 'Низкое', grid: 200, tracksRes: 2048, shadowMap: 1024, msaa: 0, particles: 1000, shrubs: 900, maxPixelRatio: 0.9, bloom: false, sandLow: true },
 };
 
-function load(key, def) {
+export function load(key, def) {
   try { return localStorage.getItem(key) ?? def; } catch (e) { return def; }
 }
 export function save(key, v) {

@@ -1,6 +1,6 @@
 // Точка входа: сборка мира, игровой цикл, освещение, время суток, события.
 import * as THREE from 'three';
-import { QUALITY, QUALITY_NAME, PRESETS, AUTO_RES, save, IS_MOBILE, SEED, WIND } from './config.js';
+import { QUALITY, QUALITY_NAME, PRESETS, AUTO_RES, save, load, IS_MOBILE, SEED, WIND } from './config.js';
 import { setupApp, enterFullscreen } from './app.js';
 import { Simplex2, clamp } from './noise.js';
 import { Track } from './track.js';
@@ -111,8 +111,13 @@ async function boot() {
   const car = new Car(terrain, 0xf2f2ee);
   scene.add(car.mesh);
   car.reset(0, -12, Math.PI);
-  let styleName = STYLES[localStorage.getItem('dd_style')] ? localStorage.getItem('dd_style') : 'arcade';
+  let styleName = STYLES[load('dd_style', 'arcade')] ? load('dd_style', 'arcade') : 'arcade';
   car.tune = STYLES[styleName];
+  // Цвет кузова (сохраняется)
+  const PAINTS = [0xf2f2ee, 0x1b1d21, 0xc8312a, 0xe8a628, 0x2f6fd1, 0x3f7a4a, 0xd96f2d, 0x8a8f96];
+  let paintHex = Number(load('dd_paint', '')) || PAINTS[0];
+  if (!PAINTS.includes(paintHex)) paintHex = PAINTS[0];
+  car.model.paint.color.setHex(paintHex);
 
   const botDefs = [
     { color: 0x1f5fbf, hud: '#3b8cff', skill: 0.97 },
@@ -265,6 +270,19 @@ async function boot() {
       location.reload();
     });
     qWrap.appendChild(b);
+  }
+  const colorsEl = document.getElementById('colors');
+  for (const hex of PAINTS) {
+    const b = document.createElement('button');
+    b.className = 'swatch' + (hex === paintHex ? ' on' : '');
+    b.style.background = '#' + hex.toString(16).padStart(6, '0');
+    b.addEventListener('click', () => {
+      paintHex = hex;
+      car.model.paint.color.setHex(hex);
+      save('dd_paint', String(hex));
+      colorsEl.querySelectorAll('.swatch').forEach((x) => x.classList.toggle('on', x === b));
+    });
+    colorsEl.appendChild(b);
   }
   const autoRes = document.getElementById('autoRes');
   autoRes.checked = AUTO_RES;
