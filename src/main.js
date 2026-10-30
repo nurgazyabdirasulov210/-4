@@ -34,7 +34,16 @@ const PALETTES = {
     fog: new THREE.Color(0xe0a679), zenith: new THREE.Color(0x2f4f8c), horizon: new THREE.Color(0xf5ab6a),
     ground: new THREE.Color(0xc98d62), exposure: 1.05,
   },
+  night: {
+    sunDir: new THREE.Vector3(0.35, 0.58, -0.45).normalize(), // луна
+    sun: new THREE.Color(0x9fb6ee), sunI: 1.1,
+    hemiSky: new THREE.Color(0x4a6094), hemiGround: new THREE.Color(0x3c3640), hemiI: 0.75,
+    fog: new THREE.Color(0x1c2740), zenith: new THREE.Color(0x03071a), horizon: new THREE.Color(0x22304e),
+    ground: new THREE.Color(0x2c2a30), exposure: 1.35, night: 1,
+  },
 };
+const TIME_ORDER = ['day', 'sunset', 'night'];
+const TIME_NAMES = { day: 'День', sunset: 'Закат', night: 'Ночь' };
 
 const loadingEl = document.getElementById('loading');
 const playBtn = document.getElementById('play');
@@ -145,6 +154,17 @@ async function boot() {
   post.setSize(innerWidth, innerHeight, pixelRatio);
   const hud = new HUD(track, [...terrain.sites, ...world.landmarks]);
 
+  // Фары (включаются ночью)
+  const headlights = [];
+  for (const sx of [-0.7, 0.7]) {
+    const l = new THREE.SpotLight(0xfff1d6, 150, 120, 0.55, 0.6, 1.25);
+    l.position.set(sx, 0.9, 2.3);
+    l.target.position.set(sx * 3, -2.2, 30);
+    car.mesh.add(l, l.target);
+    l.visible = false;
+    headlights.push(l);
+  }
+
   // Применение палитры времени суток
   let palName = 'day';
   const applyPalette = (p) => {
@@ -161,6 +181,11 @@ async function boot() {
     particles.uniforms.uSunColor.value.copy(p.sun).multiplyScalar(p.sunI / 3.4);
     particles.uniforms.uAmbient.value.copy(p.hemiSky).lerp(p.hemiGround, 0.5).multiplyScalar(0.62 * p.hemiI);
     particles.uniforms.uFogColor.value.copy(p.fog);
+    const night = p.night || 0;
+    sky.userData.uniforms.uNight.value = night;
+    for (const h of headlights) h.visible = night > 0;
+    car.model.headMat.emissiveIntensity = night ? 7 : 2.2;
+    for (const b of bots) b.model.headMat.emissiveIntensity = night ? 7 : 2.2;
     rebuildEnv();
   };
   applyPalette(pal);
@@ -202,10 +227,10 @@ async function boot() {
     drift.reset();
   };
   const toggleTime = () => {
-    palName = palName === 'day' ? 'sunset' : 'day';
+    palName = TIME_ORDER[(TIME_ORDER.indexOf(palName) + 1) % TIME_ORDER.length];
     pal = PALETTES[palName];
     applyPalette(pal);
-    hud.toast(palName === 'day' ? 'День' : 'Закат');
+    hud.toast(TIME_NAMES[palName]);
   };
   const toggleSound = () => {
     audio.setEnabled(!audio.enabled);
