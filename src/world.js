@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { mulberry32, clamp } from './noise.js';
 import { HALF, QUALITY, WIND } from './config.js';
+import { buildExtras } from './worldExtras.js';
 import { planksTexture, corrugatedTexture, shrubTexture, bannerTexture, stripesTexture } from './textures.js';
 
 const _v = new THREE.Vector3();
@@ -81,6 +82,9 @@ export class World {
     this.flying = new Set();
     this.events = [];
     this.windmills = [];
+    this.extraShrubs = [];
+    this.blinkers = [];
+    this.waters = [];
     this.time = 0;
     this._tmp = [];
 
@@ -102,6 +106,7 @@ export class World {
     };
 
     this.buildCamp();
+    buildExtras(this);
     this.buildOutposts();
     this.buildPowerLine(new THREE.Vector2(-HALF + 60, -260), new THREE.Vector2(HALF - 60, 330));
     this.buildPowerLine(new THREE.Vector2(-180, HALF - 60), new THREE.Vector2(120, -HALF + 60));
@@ -749,10 +754,18 @@ export class World {
           transformed.x += sway * 0.09 * position.y * position.y;
           transformed.z += sway * 0.05 * position.y * position.y;`);
     };
-    const N = QUALITY.shrubs;
+    const extra = this.extraShrubs;
+    const N = QUALITY.shrubs + extra.length;
     const inst = new THREE.InstancedMesh(geo, mat, N);
     const col = new THREE.Color();
     let k = 0;
+    for (const e of extra) {
+      _q.setFromAxisAngle(UP, this.rnd() * 6.28);
+      _m.compose(_v.set(e.x, this.h(e.x, e.z) - 0.05, e.z), _q, _s.set(e.s, e.s * 1.4, e.s));
+      inst.setMatrixAt(k, _m);
+      col.setHSL(0.22 + this.rnd() * 0.06, 0.45, 0.45 + this.rnd() * 0.15);
+      inst.setColorAt(k++, col);
+    }
     for (let i = 0; i < N * 1.6 && k < N; i++) {
       // скопления вокруг «оазисов» шума
       const x = (this.rnd() - 0.5) * 1540, z = (this.rnd() - 0.5) * 1540;
@@ -795,6 +808,10 @@ export class World {
       const p = [];
       for (let i = 0; i < 3; i++) { const t = new THREE.TorusGeometry(0.4, 0.15, 8, 18); t.rotateX(Math.PI / 2); t.translate(0, -0.3 + i * 0.3, 0); p.push(t); }
       g = merge(p); mat = this.mats.rubber; r = 0.6; baseY = 0.45;
+    } else if (type === 'crate') {
+      const p = [new THREE.BoxGeometry(1.0, 1.0, 1.0)];
+      for (const y of [-0.42, 0.42]) for (const z of [-0.51, 0.51]) p.push(boxAt(1.04, 0.1, 0.04, 0, y, z));
+      g = merge(p); mat = this.mats.wood; r = 0.6; baseY = 0.5;
     } else if (type === 'tumbleweed') {
       const rnd = mulberry32(77);
       const p = [];
@@ -950,6 +967,9 @@ export class World {
   update(dt, playerPos) {
     this.time += dt;
     this.shrubUniforms.uTime.value = this.time;
+    const blink = Math.sin(this.time * 3.2) > 0.4 ? 5 : 0.3;
+    for (const b of this.blinkers) b.emissiveIntensity = blink;
+    for (const u of this.waters) u.uTime.value = this.time;
     for (const w of this.windmills) w.fan.rotation.z += w.speed * dt * (0.8 + 0.4 * Math.sin(this.time * 0.3 + w.speed));
 
     // Перекати-поле: катится по ветру, подпрыгивает, переносится к игроку

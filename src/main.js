@@ -8,7 +8,7 @@ import { Terrain } from './terrain.js';
 import { TireTracks } from './tiretracks.js';
 import { createSky } from './sky.js';
 import { World } from './world.js';
-import { Car } from './car.js';
+import { Car, STYLES } from './car.js';
 import { Bot } from './ai.js';
 import { Particles } from './particles.js';
 import { Effects } from './effects.js';
@@ -111,6 +111,8 @@ async function boot() {
   const car = new Car(terrain, 0xf2f2ee);
   scene.add(car.mesh);
   car.reset(0, -12, Math.PI);
+  let styleName = STYLES[localStorage.getItem('dd_style')] ? localStorage.getItem('dd_style') : 'arcade';
+  car.tune = STYLES[styleName];
 
   const botDefs = [
     { color: 0x1f5fbf, hud: '#3b8cff', skill: 0.97 },
@@ -136,7 +138,7 @@ async function boot() {
   const audio = new Audio();
   const post = new Post(renderer, scene, camera);
   post.setSize(innerWidth, innerHeight, pixelRatio);
-  const hud = new HUD(track);
+  const hud = new HUD(track, [...terrain.sites, ...world.landmarks]);
 
   // Применение палитры времени суток
   let palName = 'day';
@@ -204,9 +206,20 @@ async function boot() {
     audio.setEnabled(!audio.enabled);
     hud.toast(audio.enabled ? 'Звук включён' : 'Звук выключен');
   };
+  const styleBtn = document.getElementById('btnStyle');
+  const showStyle = () => { styleBtn.textContent = 'СТИЛЬ: ' + STYLES[styleName].label; };
+  showStyle();
+  const toggleStyle = () => {
+    styleName = styleName === 'arcade' ? 'drift' : 'arcade';
+    car.tune = STYLES[styleName];
+    save('dd_style', styleName);
+    showStyle();
+    hud.toast(styleName === 'drift' ? 'ДРИФТ: задний привод, корма скользит — держи угол газом и рулём' : 'АРКАДА: устойчивое управление', 'cyan');
+  };
   const nextCam = () => { rig.next(); hud.toast('Камера: ' + rig.modeName); };
   const bindBtn = (id, fn) => document.getElementById(id).addEventListener('click', (e) => { fn(); e.currentTarget.blur(); });
   bindBtn('btnRace', startRace);
+  bindBtn('btnStyle', toggleStyle);
   bindBtn('btnCam', nextCam);
   bindBtn('btnTime', toggleTime);
   bindBtn('btnSound', toggleSound);
@@ -287,6 +300,7 @@ async function boot() {
 
     // горячие клавиши
     if (input.consume('KeyC')) nextCam();
+    if (input.consume('KeyV')) toggleStyle();
     if (input.consume('KeyT')) startRace();
     if (input.consume('KeyN')) toggleTime();
     if (input.consume('KeyM')) toggleSound();

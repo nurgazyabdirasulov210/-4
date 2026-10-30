@@ -14,6 +14,21 @@ const _x = new THREE.Vector3();
 const _z = new THREE.Vector3();
 const _n = new THREE.Vector3();
 
+// Стили управления: «аркада» (по умолчанию) и «дрифт» — задний привод, скользкая корма,
+// сильная поддержка угла заноса и большой угол руля для контрруления.
+export const STYLES = {
+  arcade: {
+    label: 'АРКАДА', rearDrive: 0.68, muRear: 0.97, hb: 0.42, capDrive: 0.6, capMin: 0.35,
+    BR: 7.0, CR: 1.6, steerLow: 0.62, steerHigh: 0.22, counter: 0.55, assist: 3.2,
+    betaLimit: 0.85, betaK: 6, yawDamp: 0.35, kick: 0,
+  },
+  drift: {
+    label: 'ДРИФТ', rearDrive: 0.9, muRear: 0.86, hb: 0.3, capDrive: 0.85, capMin: 0.28,
+    BR: 8.5, CR: 1.8, steerLow: 0.7, steerHigh: 0.42, counter: 0.7, assist: 5.0,
+    betaLimit: 0.85, betaK: 80, yawDamp: 0.25, kick: 1.2, settle: 1.5, settleGrip: 1.0,
+  },
+};
+
 function pacejka(alpha, B, C) {
   return Math.sin(C * Math.atan(B * alpha));
 }
@@ -65,6 +80,7 @@ export class Car {
     this.vf = 0; this.vl = 0;
     this.driftAngle = 0;
     this.collisionCircles = [-1.45, 0, 1.45];
+    this.tune = STYLES.arcade;
     this.radius = 1.0;
   }
 
@@ -161,10 +177,11 @@ export class Car {
     const rolling = lerp(0.045, 0.015, road);
 
     // Рулевое: меньше на скорости + контрруление в заносе
-    const maxSteer = lerp(0.62, 0.22, smoothstep(4, 42, Math.abs(vf)));
+    const T = this.tune;
+    const maxSteer = lerp(T.steerLow, T.steerHigh, smoothstep(4, 42, Math.abs(vf)));
     const beta = Math.atan2(vl, Math.max(Math.abs(vf), 0.5));
     let target = -input.steer * maxSteer;
-    if (speed > 6 && vf > 0) target += clamp(beta, -0.6, 0.6) * 0.55;
+    if (speed > 6 && vf > 0) target += clamp(beta, -0.6, 0.6) * T.counter;
     target = clamp(target, -0.8, 0.8);
     this.delta = damp(this.delta, target, 9, dt);
     const d = this.delta, cd = Math.cos(d), sd = Math.sin(d);
@@ -197,12 +214,14 @@ export class Car {
     const hb = input.handbrake;
     this.handbrake = hb;
     const muF = mu * 1.05;
-    const muR = mu * 0.97 * (hb ? 0.42 : 1);
+    // без руля и ручника корма возвращает сцепление — машина выравнивается
+    const slideIntent = clamp(Math.abs(input.steer) * 1.6 + (hb ? 1 : 0), 0, 1);
+    const muR = mu * lerp(T.settleGrip ?? T.muRear, T.muRear, slideIntent) * (hb ? T.hb : 1);
 
     // Продольные силы
     const sv = Math.sign(vf) || 0;
-    let FxF = 0.32 * Fdrive - sv * Fbrake * 0.6;
-    let FxR = 0.68 * Fdrive - sv * Fbrake * 0.4;
+    let FxF = (1 - T.rearDrive) * Fdrive - sv * Fbrake * 0.6;
+    let FxR = T.rearDrive * Fdrive - sv * Fbrake * 0.4;
     if (hb && Math.abs(vf) > 0.5) FxR -= sv * muR * FzR * 0.8;
     const maxFF = muF * FzF, maxFR = muR * FzR;
     FxF = clamp(FxF, -maxFF, maxFF);
@@ -217,10 +236,10 @@ export class Car {
     const alphaR = Math.atan2(vlr, Math.max(Math.abs(vf), 2.0));
     const capF = Math.sqrt(Math.max(0, 1 - (FxF / maxFF) ** 2 * 0.7));
     // Буксование ведущих колёс съедает боковое сцепление (заносы на газу), тормоз — меньше
-    const driveShare = FxR * sv >= 0 ? 0.6 : 0.3;
-    const capR = Math.max(0.35, Math.sqrt(Math.max(0, 1 - (FxR / maxFR) ** 2 * driveShare)));
+    const driveShare = FxR * sv >= 0 ? T.capDrive : 0.3;
+    const capR = Math.max(T.capMin, Math.sqrt(Math.max(0, 1 - (FxR / maxFR) ** 2 * driveShare)));
     const FyF = -muF * FzF * pacejka(alphaF, 7.5, 1.55) * capF;
-    const FyR = -muR * FzR * pacejka(alphaR, 7.0, 1.6) * capR;
+    const FyR = -muR * FzR * pacejka(alphaR, T.BR, T.CR) * capR;
 
     let Flong = FxF * cd - FyF * sd + FxR;
     let Flat = FxF * sd + FyF * cd + FyR;
@@ -228,12 +247,12 @@ export class Car {
 
     // Аркадная помощь в заносе: поддержка скорости и ограничение угла
     if (vf > 4 && Math.abs(beta) > 0.18) {
-      const assist = input.throttle * Math.abs(Math.sin(beta)) * m * 3.2;
+      const assist = input.throttle * Math.abs(Math.sin(beta)) * m * T.assist;
       const vlen = speed || 1;
       Flong += assist * (vf / vlen);
       Flat += assist * (vl / vlen);
-      const excess = Math.abs(beta) - 0.85;
-      if (excess > 0) this.yawRate += Math.sign(beta) * excess * 6 * dt;
+      const excess = Math.abs(beta) - T.betaLimit;
+      if (excess > 0) this.yawRate += Math.sign(beta) * excess * T.betaK * dt;
     }
 
     const c01 = this.contact;
@@ -259,7 +278,11 @@ export class Car {
       this.yawRate *= Math.exp(-0.6 * dt);
       this.yawRate += -input.steer * 1.4 * dt;
     } else {
-      this.yawRate *= Math.exp(-0.35 * dt);
+      this.yawRate *= Math.exp(-(T.yawDamp + (T.settle || 0) * (1 - Math.min(1, Math.abs(input.steer) * 2))) * dt);
+      // «Вброс» в занос: резкий руль на скорости закручивает корму
+      if (T.kick && this.grounded && vf > 12 && Math.abs(input.steer) > 0.6 && Math.abs(beta) < 0.5) {
+        this.yawRate += -input.steer * T.kick * (input.handbrake ? 1.5 : 1) * dt;
+      }
     }
     // Стабилизация на месте
     if (speed < 0.8 && input.throttle <= 0 && input.brake <= 0 && this.grounded) {

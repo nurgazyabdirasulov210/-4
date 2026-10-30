@@ -196,3 +196,5 @@ body.touch #racePanel b { font-size: 12px; }
   .play { margin: 10px 0 6px; padding: 10px 40px; }
   .sub { margin-top: 2px; }
 }
+
+.btn.style { background: rgba(255,170,40,.35); }

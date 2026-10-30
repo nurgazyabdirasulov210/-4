@@ -69,6 +69,27 @@ export class Terrain {
     }
     this.campHeight = (campSum / campCnt) * 0.6;
     const hw = track.width / 2;
+
+    // Впадины: дрифт-чаша (как в видео) и оазис с прудом
+    this.sites = [];
+    const pick = (r, minCamp) => {
+      for (let k = 0; k < 400; k++) {
+        const a = k * 2.399, rr = minCamp + ((k * 37) % 23) / 23 * (HALF - 160 - r - minCamp);
+        const x = Math.cos(a) * rr, z = Math.sin(a) * rr;
+        if (this.trackDistanceAt(x, z) < r * 1.7 + hw + 10) continue;
+        if (this.sites.some((s) => Math.hypot(s.x - x, s.z - z) < s.r * 2 + r * 2 + 60)) continue;
+        let sum = 0;
+        for (let q = 0; q < 12; q++) sum += this.rawHeight(x + Math.cos(q) * r * 1.4, z + Math.sin(q) * r * 1.4);
+        return { x, z, base: sum / 12 };
+      }
+      return null;
+    };
+    const bowl = pick(55, 200);
+    if (bowl) this.sites.push((this.bowl = { ...bowl, type: 'bowl', r: 55, depth: 8 }));
+    const oasis = pick(28, 180);
+    if (oasis) this.sites.push((this.oasis = { ...oasis, type: 'oasis', r: 28, depth: 3.2 }));
+    if (this.oasis) this.oasis.water = this.oasis.base - this.oasis.depth * 0.62;
+
     for (let j = 0; j <= res; j++) {
       const z = -HALF + j * cell;
       for (let i = 0; i <= res; i++) {
@@ -80,6 +101,13 @@ export class Terrain {
         h = lerp(h, trackH[idx] + (d < hw ? 0 : 0.25 * smoothstep(hw, hw + 6, d)), w);
         const dc = Math.hypot(x, z);
         h = lerp(h, this.campHeight + 0.6 * this.noise.noise(x * 0.02, z * 0.02), 1 - smoothstep(70, 150, dc));
+        for (const st of this.sites) {
+          const dd = Math.hypot(x - st.x, z - st.z) / st.r;
+          if (dd > 2.2) continue;
+          h = lerp(h, st.base, 1 - smoothstep(1.3, 2.2, dd));
+          if (dd < 1) { const q = 1 - dd * dd; h -= st.depth * q * (0.6 + 0.4 * q); }
+          else if (st.type === 'bowl') h += 0.9 * Math.sin(Math.min(1, (dd - 1) / 0.3) * Math.PI) * (dd < 1.3 ? 1 : 0);
+        }
         const e = smoothstep(HALF - 140, HALF - 10, Math.max(Math.abs(x), Math.abs(z)));
         h += e * e * 70;
         this.heights[idx] = h;

@@ -10,7 +10,7 @@ export function fmtTime(t) {
 }
 
 export class HUD {
-  constructor(track) {
+  constructor(track, landmarks = []) {
     this.el = {
       speed: $('speed'), fps: $('fps'), drift: $('drift'), driftScore: $('driftScore'), driftMult: $('driftMult'),
       driftAngle: $('driftAngle'), total: $('totalScore'), toasts: $('toasts'), race: $('racePanel'),
@@ -43,6 +43,13 @@ export class HUD {
     g.stroke();
     g.fillStyle = 'rgba(80,55,35,0.8)';
     g.beginPath(); g.arc(HALF * k, HALF * k, 6, 0, 7); g.fill();
+    for (const l of landmarks) {
+      const x = (l.x + HALF) * k, y = (l.z + HALF) * k;
+      if (l.type === 'mesa') { g.fillStyle = 'rgba(140,85,50,0.9)'; g.beginPath(); g.arc(x, y, l.r * k, 0, 7); g.fill(); }
+      else if (l.type === 'bowl') { g.strokeStyle = 'rgba(90,55,30,0.9)'; g.lineWidth = 2; g.beginPath(); g.arc(x, y, l.r * k, 0, 7); g.stroke(); }
+      else if (l.type === 'oasis') { g.fillStyle = 'rgba(40,120,130,0.95)'; g.beginPath(); g.arc(x, y, l.r * k * 0.8, 0, 7); g.fill(); }
+      else if (l.type !== 'wreck') { g.fillStyle = 'rgba(60,40,25,0.85)'; g.fillRect(x - 2.5, y - 2.5, 5, 5); }
+    }
     this.mapBg = bg;
     this.fpsAcc = 0; this.fpsN = 0; this.fpsShown = 60;
     this.lastDriftShown = -1;
