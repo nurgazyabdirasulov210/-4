@@ -656,7 +656,7 @@ async function boot() {
   frame();
 
   // для отладки из консоли
-  window.__game = { net, car, world, terrain, race, drift, bots, rig, renderer, scene, camera, start, startRace, toggleTime, input };
+  window.__game = { effects, particles, net, car, world, terrain, race, drift, bots, rig, renderer, scene, camera, start, startRace, toggleTime, input };
 }
 
 boot().catch((e) => {
