@@ -18,6 +18,7 @@ import { Audio } from './audio.js';
 import { Post } from './post.js';
 import { HUD, fmtTime } from './hud.js';
 import { Race, DriftScore } from './race.js';
+import { Net, cleanName } from './net.js';
 
 const PALETTES = {
   day: {
@@ -154,6 +155,37 @@ async function boot() {
   post.setSize(innerWidth, innerHeight, pixelRatio);
   const hud = new HUD(track, [...terrain.sites, ...world.landmarks]);
 
+  // Мультиплеер: все игроки на сайте — в одной пустыне (комната ?room=имя — своя карта для друзей)
+  let playerName = cleanName(load('dd_name', ''));
+  if (!playerName) { playerName = 'Гонщик-' + Math.floor(1000 + Math.random() * 9000); save('dd_name', playerName); }
+  const room = new URLSearchParams(location.search).get('room') || 'main';
+  const net = new Net(scene, terrain, effects, { room, name: playerName, paint: paintHex });
+  const netPill = document.getElementById('netPill');
+  const netStatus = document.getElementById('netStatus');
+  const showNet = () => {
+    const on = net.enabled, ok = net.connected;
+    const txt = !on ? 'ОФЛАЙН' : ok ? `ОНЛАЙН · ${net.count + 1}` : 'ПОДКЛЮЧЕНИЕ…';
+    if (netPill.textContent !== txt) netPill.textContent = txt;
+    netPill.classList.toggle('ok', on && ok);
+    const st = !on ? 'Выключено — играешь один' : ok ? `Подключено · игроков в пустыне: ${net.count + 1}` : 'Подключаемся к серверу…';
+    if (netStatus.textContent !== st) netStatus.textContent = st;
+  };
+  net.onStatus = showNet;
+  const onlineChk = document.getElementById('online');
+  onlineChk.checked = load('dd_online', '1') === '1';
+  net.setEnabled(onlineChk.checked);
+  onlineChk.addEventListener('change', () => { save('dd_online', onlineChk.checked ? '1' : '0'); net.setEnabled(onlineChk.checked); });
+  const nameInp = document.getElementById('playerName');
+  nameInp.value = playerName;
+  nameInp.addEventListener('change', () => {
+    const n = cleanName(nameInp.value);
+    if (!n) { nameInp.value = playerName; return; }
+    playerName = net.name = nameInp.value = n;
+    save('dd_name', n);
+  });
+  nameInp.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') nameInp.blur(); });
+  showNet();
+
   // Фары (включаются ночью)
   const headlights = [];
   for (const sx of [-0.7, 0.7]) {
@@ -187,6 +219,7 @@ async function boot() {
     for (const h of headlights) h.intensity = night ? 150 : 0;
     car.model.headMat.emissiveIntensity = night ? 7 : 2.2;
     for (const b of bots) b.model.headMat.emissiveIntensity = night ? 7 : 2.2;
+    net.setNight(!!night);
     rebuildEnv();
   };
   applyPalette(pal);
@@ -320,6 +353,7 @@ async function boot() {
     b.style.background = '#' + hex.toString(16).padStart(6, '0');
     b.addEventListener('click', () => {
       paintHex = hex;
+      net.paint = hex;
       car.model.paint.color.setHex(hex);
       save('dd_paint', String(hex));
       colorsEl.querySelectorAll('.swatch').forEach((x) => x.classList.toggle('on', x === b));
@@ -361,6 +395,8 @@ async function boot() {
   const zeroInput = { throttle: 0, brake: 0, steer: 0, handbrake: true, boost: false, jump: false };
   let lastCount = -1;
   let jumpLatch = false;
+  let netT = 0;
+  const esc = (t) => t.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
   const frame = () => {
     requestAnimationFrame(frame);
@@ -372,6 +408,7 @@ async function boot() {
       if (input.pressed.has('Start')) start();
       input.pressed.clear();
       rig.update(car, dt);
+      net.update(dt, car, camera.position, true);
       sky.position.copy(camera.position);
       post.render(dt, 0, 0);
       return;
@@ -402,6 +439,7 @@ async function boot() {
       acc -= STEP;
       steps++;
     }
+    net.collide(car);
     car.updateVisual();
     for (const b of bots) b.update(dt, car);
 
@@ -510,6 +548,15 @@ async function boot() {
     effects.car(car, dt);
     bots.forEach((b, i) => effects.bot(b, dt, i));
     effects.ambient(car.pos, dt);
+    net.update(dt, car, camera.position);
+    for (const ev of net.events) {
+      if (ev.type === 'join') hud.toast(`${esc(ev.name)} в пустыне`, 'cyan');
+      else hud.toast(`${esc(ev.name)} уехал`);
+    }
+    if (net.events.length) showNet();
+    net.events.length = 0;
+    netT += dt;
+    if (netT > 1) { netT = 0; showNet(); }
     particles.uniforms.uTime.value += dt;
     particles.update(dt, windVel);
     tireTracks.update();
@@ -529,7 +576,7 @@ async function boot() {
     sun.position.copy(_lt).addScaledVector(sunDir, 250);
 
     audio.update(car, dt);
-    hud.update(dt, car, drift, race, bots, rig, camera, { gear: audio.gear, position });
+    hud.update(dt, car, drift, race, bots, rig, camera, { gear: audio.gear, position, remotes: net.remotes });
 
     post.render(dt, clamp(car.speed / 50, 0, 1), car.boosting ? 1 : 0);
 
@@ -552,7 +599,7 @@ async function boot() {
   frame();
 
   // для отладки из консоли
-  window.__game = { car, world, terrain, race, drift, bots, rig, renderer, scene, camera, start, startRace, toggleTime, input };
+  window.__game = { net, car, world, terrain, race, drift, bots, rig, renderer, scene, camera, start, startRace, toggleTime, input };
 }
 
 boot().catch((e) => {

@@ -39,7 +39,7 @@ export class Effects {
     this.p = particles;
     this.tracks = tracks;
     this.terrain = terrain;
-    this.acc = new Float32Array(128);
+    this.acc = new Float32Array(256);
     this.prev = new Map();
     this.botPrev = [];
     this.ambientAcc = 0;
@@ -151,7 +151,7 @@ export class Effects {
     if (car.boosting) this._flame(car, s, c, dt);
   }
 
-  _flame(car, s, c, dt) {
+  _flame(car, s, c, dt, kb = 0) {
     const P = this.p;
     const m = car.mesh?.matrixWorld;
     if (m) {
@@ -163,13 +163,13 @@ export class Effects {
     }
     const vx = car.vel.x, vy = car.vel.y, vz = car.vel.z;
     // раскалённое ядро у среза трубы: живёт пару кадров и едет вместе с машиной
-    const ng = this._n(33, 60, dt);
+    const ng = this._n(33 + kb, 60, dt);
     for (let e = 0; e < ng; e++) {
       P.emit(_e.x + _d.x * 0.15, _e.y + _d.y * 0.15, _e.z + _d.z * 0.15, vx, vy, vz,
         0.8 + rnd() * 0.15, 0.05, 0.04, 1, FLAME[0], FLAME[1], FLAME[2], O_GLOW);
     }
     // языки пламени: быстрые, короткоживущие, вытягиваются по скорости
-    const nf = this._n(30, 150, dt);
+    const nf = this._n(30 + kb, 150, dt);
     for (let e = 0; e < nf; e++) {
       const v = 13 + rnd() * 5;
       const off = rnd() * 0.3;
@@ -178,7 +178,7 @@ export class Effects {
         0.42 + rnd() * 0.12, 0.7, 0.1 + rnd() * 0.08, 0.9, FLAME[0], FLAME[1], FLAME[2], O_FLAME);
     }
     // горячий воздух с лёгкой дымкой за пламенем
-    const nx = this._n(31, 18, dt);
+    const nx = this._n(31 + kb, 18, dt);
     for (let e = 0; e < nx; e++) {
       P.emit(_e.x + _d.x * 1.4, _e.y + _d.y * 1.4 + 0.1, _e.z + _d.z * 1.4,
         vx * 0.5 + _d.x * 4 + (rnd() - 0.5), 0.5 + rnd() * 0.6, vz * 0.5 + _d.z * 4 + (rnd() - 0.5),

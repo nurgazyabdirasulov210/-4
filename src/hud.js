@@ -125,6 +125,12 @@ export class HUD {
     ctx.drawImage(this.mapBg, 0, 0, W, W);
     const k = W / WORLD_SIZE;
     const toMap = (x, z) => [(x + HALF) * k, (z + HALF) * k];
+    if (extra.remotes) for (const r of extra.remotes.values()) {
+      const [x, y] = toMap(r.pos.x, r.pos.z);
+      ctx.fillStyle = r.hudColor;
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(x, y, 4, 0, 7); ctx.fill(); ctx.stroke();
+    }
     for (const b of bots) {
       const [x, y] = toMap(b.pos.x, b.pos.z);
       ctx.fillStyle = b.hudColor;
