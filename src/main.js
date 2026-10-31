@@ -622,6 +622,7 @@ async function boot() {
     // Камера, солнце следует за машиной (снап к текселю — без мерцания теней)
     rig.update(car, dt);
     if (!dragging) rig.orbit *= Math.exp(-2.5 * dt);
+    window.__cine?.(dt, car, camera); // хук для съёмки роликов
     sky.position.copy(camera.position);
     const texel = (sc.right - sc.left) / QUALITY.shadowMap;
     _lr.crossVectors(_up, sunDir).normalize();
