@@ -43,6 +43,7 @@ export class Car {
 
     this.mass = 1450;
     this.inertia = 2500;
+    this.spec = { power: 1, force: 1, mass: 1, grip: 1, boost: 1, scale: 1 };
     this.a = 1.38;            // ЦМ → передняя ось
     this.b = 1.42;            // ЦМ → задняя ось
     this.cgH = 0.62;
@@ -101,6 +102,14 @@ export class Car {
     this._computeWheels();
     for (const w of this.wheels) w.prevWorld.copy(w.world);
     this.updateVisual(0);
+  }
+
+  // Характеристики выбранной машины из гаража (множители к базовому джипу)
+  setSpec(spec) {
+    this.spec = spec;
+    this.mass = 1450 * spec.mass;
+    this.inertia = 2500 * spec.mass;
+    this.mesh.scale.setScalar(spec.scale);
   }
 
   _computeWheels() {
@@ -178,7 +187,7 @@ export class Car {
     const speed = Math.hypot(vf, vl);
     const road = t.roadAt(this.pos.x, this.pos.z);
     this.surfaceRoad = road;
-    const mu = lerp(0.86, 1.08, road);
+    const mu = lerp(0.86, 1.08, road) * this.spec.grip;
     const rolling = lerp(0.045, 0.015, road);
 
     // Рулевое: меньше на скорости + контрруление в заносе
@@ -192,12 +201,12 @@ export class Car {
     const d = this.delta, cd = Math.cos(d), sd = Math.sin(d);
 
     this.boosting = input.boost && this.boost > 0.02 && this.contact > 0.2;
-    if (this.boosting) this.boost = Math.max(0, this.boost - dt * 0.32);
+    if (this.boosting) this.boost = Math.max(0, this.boost - dt * 0.32 / this.spec.boost);
     else this.boost = Math.min(1, this.boost + dt * 0.06);
 
     // Двигатель / тормоз / задний ход
-    const P = (this.boosting ? 360000 : 215000);
-    const maxF = this.boosting ? 15500 : 11500;
+    const P = (this.boosting ? 360000 : 215000) * this.spec.power;
+    const maxF = (this.boosting ? 15500 : 11500) * this.spec.force;
     let Fdrive = 0, Fbrake = 0;
     this.throttle = input.throttle;
     this.brake = input.brake;

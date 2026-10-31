@@ -1,8 +1,11 @@
 // Процедурная пустыня: барханы, сглаженная трасса, лагерь, шейдер песка.
+import { selectedMap } from './garage.js';
 import * as THREE from 'three';
 import { WORLD_SIZE, HALF, QUALITY, WIND } from './config.js';
 import { smoothstep, lerp, clamp } from './noise.js';
 import { SAND_COMMON, SAND_FRAGMENT_COLOR, SAND_FRAGMENT_NORMAL, SAND_FRAGMENT_EMISSIVE } from './shaders/sand.js';
+
+const SAND = selectedMap().sand;
 
 export class Terrain {
   constructor(noise, track) {
@@ -260,9 +263,9 @@ export class Terrain {
       uTireTexel: { value: 1 / tireTracks.res },
       uWind: { value: new THREE.Vector2(WIND.x, WIND.z) },
       uSunDir: { value: new THREE.Vector3(0, 1, 0) },
-      uSandA: { value: new THREE.Color(0xd9a064) },
-      uSandB: { value: new THREE.Color(0xe9b679) },
-      uSandC: { value: new THREE.Color(0xb7773f) },
+      uSandA: { value: new THREE.Color(SAND[0]) },
+      uSandB: { value: new THREE.Color(SAND[1]) },
+      uSandC: { value: new THREE.Color(SAND[2]) },
       uRoad: { value: new THREE.Color(0xa87449) },
     };
     this.uniforms = uniforms;

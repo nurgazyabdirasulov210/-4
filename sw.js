@@ -1,6 +1,6 @@
 // Service worker: игра целиком кэшируется и работает без интернета.
 // При обновлении игры поменяйте VERSION, чтобы телефоны скачали новые файлы.
-const VERSION = 'dd-v8';
+const VERSION = 'dd-v9';
 const FILES = [
   './',
   "./icons/apple-touch-icon.png",
@@ -32,6 +32,7 @@ const FILES = [
   "./src/effects.js",
   "./src/hud.js",
   "./src/input.js",
+  "./src/garage.js",
   "./src/main.js",
   "./src/net.js",
   "./src/noise.js",

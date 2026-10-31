@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { buildCarModel } from './carModel.js';
 import { HALF } from './config.js';
 import { clamp } from './noise.js';
+import { CARS } from './garage.js';
 
 // ?broker=wss://адрес — свой брокер (например, для проверки или закрытой игры)
 const CUSTOM = typeof location !== 'undefined' && new URLSearchParams(location.search).get('broker');
@@ -218,6 +219,12 @@ class Remote {
     this.hudColor = '#' + paint.toString(16).padStart(6, '0');
   }
 
+  setCar(i) {
+    if (i === this.carIdx) return;
+    this.carIdx = i;
+    this.mesh.scale.setScalar(CARS[i]?.scale || 1);
+  }
+
   setName(name) {
     if (name === this.name) return;
     this.name = name;
@@ -358,6 +365,7 @@ export class Net {
     if (car.grounded) flags |= 1;
     if (car.brake > 0.1 || car.handbrake) flags |= 2;
     if (car.boosting) flags |= 4;
+    flags |= Math.max(0, CARS.findIndex((c) => c.scale === car.spec.scale && c.power === car.spec.power)) << 3;
     this.seq = (this.seq + 1) & 0xffff;
     d.setUint8(0, 1); d.setUint8(1, flags); d.setUint16(2, this.seq, true);
     const f = [car.pos.x, car.pos.y, car.pos.z, q.x, q.y, q.z, q.w, car.vel.x, car.vel.y, car.vel.z,
@@ -413,6 +421,7 @@ export class Net {
     r.seq = seq;
     r.last = this.time;
     const flags = d.getUint8(1);
+    r.setCar(flags >> 3);
     r.grounded = !!(flags & 1); r.braking = !!(flags & 2); r.boosting = !!(flags & 4);
     r.tPos.set(f[0], f[1], f[2]);
     _q.set(f[3], f[4], f[5], f[6]);

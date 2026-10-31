@@ -1,6 +1,6 @@
 // Точка входа: сборка мира, игровой цикл, освещение, время суток, события.
 import * as THREE from 'three';
-import { QUALITY, QUALITY_NAME, PRESETS, AUTO_RES, save, load, IS_MOBILE, SEED, WIND } from './config.js';
+import { QUALITY, QUALITY_NAME, PRESETS, AUTO_RES, save, load, IS_MOBILE, WIND } from './config.js';
 import { setupApp, enterFullscreen } from './app.js';
 import { Simplex2, clamp } from './noise.js';
 import { Track } from './track.js';
@@ -19,6 +19,7 @@ import { Post } from './post.js';
 import { HUD, fmtTime } from './hud.js';
 import { Race, DriftScore } from './race.js';
 import { Net, cleanName } from './net.js';
+import { CARS, MAPS, Wallet, owned, buy, selectedMap, selectedCar } from './garage.js';
 
 const PALETTES = {
   day: {
@@ -43,6 +44,15 @@ const PALETTES = {
     ground: new THREE.Color(0x2c2a30), exposure: 1.35, night: 1,
   },
 };
+// Оттенок выбранной карты: песок и небо
+const MAP = selectedMap();
+if (MAP.k) {
+  const tint = new THREE.Color(MAP.tint);
+  for (const [name, p] of Object.entries(PALETTES)) {
+    const k = MAP.k * (p.night ? 0.4 : 1);
+    for (const key of ['fog', 'horizon', 'ground']) p[key].lerp(tint, k);
+  }
+}
 const TIME_ORDER = ['day', 'sunset', 'night'];
 const TIME_NAMES = { day: 'День', sunset: 'Закат', night: 'Ночь' };
 
@@ -70,7 +80,7 @@ async function boot() {
 
   loadingEl.textContent = 'Насыпаем барханы…';
   await nextFrame();
-  const noise = new Simplex2(SEED);
+  const noise = new Simplex2(MAP.seed);
   const track = new Track(noise);
   const terrain = new Terrain(noise, track);
 
@@ -128,6 +138,8 @@ async function boot() {
   let paintHex = Number(load('dd_paint', '')) || PAINTS[0];
   if (!PAINTS.includes(paintHex)) paintHex = PAINTS[0];
   car.model.paint.color.setHex(paintHex);
+  let carDef = selectedCar();
+  car.setSpec(carDef);
 
   const botDefs = [
     { color: 0x1f5fbf, hud: '#3b8cff', skill: 0.97 },
@@ -158,7 +170,7 @@ async function boot() {
   // Мультиплеер: все игроки на сайте — в одной пустыне (комната ?room=имя — своя карта для друзей)
   let playerName = cleanName(load('dd_name', ''));
   if (!playerName) { playerName = 'Гонщик-' + Math.floor(1000 + Math.random() * 9000); save('dd_name', playerName); }
-  const room = new URLSearchParams(location.search).get('room') || 'main';
+  const room = MAP.id + '-' + (new URLSearchParams(location.search).get('room') || 'main');
   const net = new Net(scene, terrain, effects, { room, name: playerName, paint: paintHex });
   const netPill = document.getElementById('netPill');
   const netStatus = document.getElementById('netStatus');
@@ -316,6 +328,7 @@ async function boot() {
   const openMenu = () => {
     running = false;
     playBtn.textContent = 'ПРОДОЛЖИТЬ';
+    renderShop();
     menuEl.classList.remove('hidden');
     try { audio.ctx?.suspend(); } catch (e) { /* нет звука */ }
   };
@@ -360,6 +373,49 @@ async function boot() {
     });
     colorsEl.appendChild(b);
   }
+  // Гараж и карты: покупка за очки дрифта
+  const walletEl = document.getElementById('wallet');
+  const shopEl = document.getElementById('shop');
+  const fmt = (n) => n.toLocaleString('ru-RU');
+  const renderShop = () => {
+    walletEl.textContent = '🪙 ' + fmt(Wallet.balance);
+    shopEl.textContent = '';
+    const section = (title, list, kind, current, pick) => {
+      const h = document.createElement('div');
+      h.className = 'slbl'; h.textContent = title;
+      shopEl.appendChild(h);
+      for (const it of list) {
+        const has = owned[kind].has(it.id), sel = it.id === current;
+        const row = document.createElement('div');
+        row.className = 'item' + (sel ? ' sel' : '');
+        const info = document.createElement('div');
+        info.innerHTML = `<b></b><small></small>`;
+        info.firstChild.textContent = it.name; info.lastChild.textContent = it.desc;
+        const btn = document.createElement('button');
+        btn.className = 'ibtn';
+        if (sel) { btn.textContent = 'ВЫБРАНО'; btn.disabled = true; }
+        else if (has) btn.textContent = 'ВЫБРАТЬ';
+        else { btn.textContent = '🪙 ' + fmt(it.price); btn.classList.toggle('poor', Wallet.balance < it.price); }
+        btn.addEventListener('click', () => {
+          if (!has && !buy(kind, it)) { hud.toast(`Не хватает ${fmt(it.price - Wallet.balance)} очков — дрифтуй!`, 'bad'); return; }
+          pick(it);
+          renderShop();
+        });
+        row.append(info, btn);
+        shopEl.appendChild(row);
+      }
+    };
+    section('ГАРАЖ', CARS, 'cars', carDef.id, (c) => {
+      carDef = c; save('dd_car', c.id); car.setSpec(c);
+      paintHex = c.paint; save('dd_paint', String(c.paint)); car.model.paint.color.setHex(c.paint); net.paint = c.paint;
+      colorsEl.querySelectorAll('.swatch').forEach((x) => x.classList.remove('on'));
+      hud.toast(c.name, 'cyan');
+    });
+    section('КАРТЫ', MAPS, 'maps', MAP.id, (m) => { save('dd_map', m.id); location.reload(); });
+  };
+  renderShop();
+  document.getElementById('shopToggle').addEventListener('click', () => { shopEl.parentElement.classList.toggle('open'); renderShop(); });
+
   const autoRes = document.getElementById('autoRes');
   autoRes.checked = AUTO_RES;
   let autoResOn = AUTO_RES;
@@ -395,7 +451,7 @@ async function boot() {
   const zeroInput = { throttle: 0, brake: 0, steer: 0, handbrake: true, boost: false, jump: false };
   let lastCount = -1;
   let jumpLatch = false;
-  let netT = 0;
+  let netT = 0, trackFrame = 0;
   const esc = (t) => t.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
   const frame = () => {
@@ -559,7 +615,7 @@ async function boot() {
     if (netT > 1) { netT = 0; showNet(); }
     particles.uniforms.uTime.value += dt;
     particles.update(dt, windVel);
-    tireTracks.update();
+    if (!IS_MOBILE || (++trackFrame % 3) === 0) tireTracks.update();
     terrain.uniforms.uTime.value += dt;
     sky.userData.uniforms.uTime.value += dt;
 

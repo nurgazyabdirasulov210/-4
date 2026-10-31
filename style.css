@@ -219,3 +219,15 @@ body.touch #racePanel b { font-size: 12px; }
 }
 #playerName:focus { border-color: var(--gold); }
 .nstat { margin-top: 6px; font-size: 12px; color: var(--muted); }
+
+/* Гараж и карты */
+.garage { margin: 10px auto 0; max-width: 440px; }
+.shopbox { display: none; text-align: left; max-height: 36vh; overflow-y: auto; margin-top: 8px; padding: 8px; background: rgba(0,0,0,.3); border-radius: 14px; }
+.garage.open .shopbox { display: block; }
+.item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; margin-bottom: 6px; border-radius: 12px; background: rgba(255,255,255,.07); border: 1px solid transparent; }
+.item.sel { border-color: var(--gold); }
+.item b { display: block; font-size: 14px; }
+.item small { color: var(--muted); font-size: 11px; line-height: 1.3; display: block; }
+.ibtn { flex: none; padding: 8px 12px; border-radius: 999px; border: 0; background: var(--gold); color: #1a1208; font: inherit; font-size: 12px; font-weight: 800; cursor: pointer; }
+.ibtn:disabled { background: rgba(255,255,255,.18); color: #fff; cursor: default; }
+.ibtn.poor { background: rgba(255,255,255,.2); color: #fff; }
