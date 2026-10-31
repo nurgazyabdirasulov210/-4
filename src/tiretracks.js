@@ -130,8 +130,10 @@ export class TireTracks {
   update() {
     if (this.count === 0) return;
     this.mesh.count = this.count;
-    this.mesh.instanceMatrix.needsUpdate = true;
-    this.strength.needsUpdate = true;
+    // загружаем на GPU только заполненную часть буферов
+    const im = this.mesh.instanceMatrix;
+    im.clearUpdateRanges(); im.addUpdateRange(0, this.count * 16); im.needsUpdate = true;
+    this.strength.clearUpdateRanges(); this.strength.addUpdateRange(0, this.count * 2); this.strength.needsUpdate = true;
     const r = this.renderer;
     const prev = r.getRenderTarget();
     const ac = r.autoClear;

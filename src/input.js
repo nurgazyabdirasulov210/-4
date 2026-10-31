@@ -8,6 +8,7 @@ export class Input {
     this.touch = { steer: 0, gas: false, brake: false, hand: false, boost: false, jump: false, active: false };
     this.pressed = new Set(); // одноразовые нажатия
     this.steerSmooth = 0;
+    this._pad = {};
 
     addEventListener('keydown', (e) => {
       if (e.repeat) return;
@@ -32,6 +33,7 @@ export class Input {
     };
     const zone = el.querySelector('#steerZone');
     zone.addEventListener('pointerdown', (e) => {
+      if (steerId !== null) return; // второй палец в зоне руля игнорируем
       steerId = e.pointerId; sx = e.clientX; sy = e.clientY;
       zone.setPointerCapture(e.pointerId);
       this.touch.steer = steerFrom(e.clientX);
@@ -46,13 +48,13 @@ export class Input {
       // свайп вверх — прыжок, вниз — импульс
       const dy = e.clientY - sy;
       if (dy < -55) { this.touch.jump = true; sy = e.clientY; }
-      this.touch.boost = dy > 45;
+      this.touch.swipeBoost = dy > 45;
     });
     const end = (e) => {
       if (e.pointerId !== steerId) return;
       steerId = null;
       this.touch.steer = 0;
-      this.touch.boost = false;
+      this.touch.swipeBoost = false;
       setKnob(0);
     };
     zone.addEventListener('pointerup', end);
@@ -70,7 +72,7 @@ export class Input {
     hold('#tGas', 'gas');
     hold('#tBrake', 'brake');
     hold('#tHand', 'hand');
-    hold('#tBoost', 'boost');
+    hold('#tBoost', 'btnBoost');
     const jb = el.querySelector('#tJump');
     jb?.addEventListener('pointerdown', (e) => { this.touch.jump = true; e.preventDefault(); });
   }
@@ -107,10 +109,12 @@ export class Input {
       if (lt > 0.05) brk = Math.max(brk, lt);
       if (p.buttons[0]?.pressed || p.buttons[5]?.pressed) hb = true;
       if (p.buttons[2]?.pressed || p.buttons[4]?.pressed) boost = true;
-      if (p.buttons[3]?.pressed && !this._padJump) jump = true;
-      this._padJump = !!p.buttons[3]?.pressed;
-      if (p.buttons[1]?.pressed && !this._padCam) this.pressed.add('KeyC');
-      this._padCam = !!p.buttons[1]?.pressed;
+      // нажатия по фронту — состояние кнопок храним отдельно для каждого геймпада
+      const prev = this._pad[p.index] || (this._pad[p.index] = {});
+      const edge = (i) => { const now = !!p.buttons[i]?.pressed; const was = prev[i]; prev[i] = now; return now && !was; };
+      if (edge(3)) jump = true;
+      if (edge(1)) this.pressed.add('KeyC');
+      if (edge(9)) this.pressed.add('Start');
     }
 
     // сенсор
@@ -120,7 +124,7 @@ export class Input {
       if (t.gas) thr = 1;
       if (t.brake) brk = 1;
       if (t.hand) hb = true;
-      if (t.boost) boost = true;
+      if (t.btnBoost || t.swipeBoost) boost = true;
       if (t.jump) { jump = true; t.jump = false; }
     }
 

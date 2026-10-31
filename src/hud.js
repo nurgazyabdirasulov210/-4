@@ -2,6 +2,8 @@
 import { HALF, WORLD_SIZE } from './config.js';
 
 const $ = (id) => document.getElementById(id);
+// запись текста только при изменении — меньше пересчётов стилей на телефоне
+const setT = (el, v) => { v = String(v); if (el._v !== v) { el._v = v; el.textContent = v; } };
 
 export function fmtTime(t) {
   if (!t) return '—';
@@ -79,9 +81,10 @@ export class HUD {
     const e = this.el;
     // FPS — среднее за 0.5 с
     this.fpsAcc += dt; this.fpsN++;
-    if (this.fpsAcc > 0.5) { this.fpsShown = Math.round(this.fpsN / this.fpsAcc); this.fpsAcc = 0; this.fpsN = 0; e.fps.textContent = this.fpsShown; }
-    e.speed.textContent = String(Math.round(car.speed * 3.6)).padStart(3, '0');
-    e.gear.textContent = extra.gear;
+    if (this.fpsAcc > 0.5) { this.fpsShown = Math.round(this.fpsN / this.fpsAcc); this.fpsAcc = 0; this.fpsN = 0; setT(e.fps, this.fpsShown); }
+    this.spdT = (this.spdT || 0) + dt;
+    if (this.spdT > 0.08) { this.spdT = 0; setT(e.speed, String(Math.round(car.speed * 3.6)).padStart(3, '0')); }
+    setT(e.gear, extra.gear);
     e.boost.style.transform = `scaleX(${car.boost.toFixed(3)})`;
     e.boost.parentElement.classList.toggle('active', car.boosting);
 
@@ -89,29 +92,29 @@ export class HUD {
     if (drift.active && drift.current > 20) {
       e.drift.classList.add('on');
       const v = Math.round(drift.current);
-      if (v !== this.lastDriftShown) { e.driftScore.textContent = v.toLocaleString('ru-RU'); this.lastDriftShown = v; }
-      e.driftMult.textContent = 'x' + drift.mult;
-      e.driftAngle.textContent = Math.round(Math.abs(car.driftAngle) * 57.3) + '°';
+      if (v !== this.lastDriftShown) { setT(e.driftScore, v.toLocaleString('ru-RU')); this.lastDriftShown = v; }
+      setT(e.driftMult, 'x' + drift.mult);
+      setT(e.driftAngle, Math.round(Math.abs(car.driftAngle) * 57.3) + '°');
     } else e.drift.classList.remove('on');
-    e.total.textContent = 'ОЧКИ ' + Math.round(drift.total).toLocaleString('ru-RU');
+    setT(e.total, 'ОЧКИ ' + Math.round(drift.total).toLocaleString('ru-RU'));
 
     // Гонка
     e.race.classList.toggle('hidden', !race.active);
-    e.btnRace.textContent = race.active ? 'СВОБОДНАЯ ЕЗДА' : 'НА ТРАССУ';
+    setT(e.btnRace, race.active ? 'СВОБОДНАЯ ЕЗДА' : 'НА ТРАССУ');
     if (race.active) {
-      e.lap.textContent = race.lap;
-      e.lapTime.textContent = fmtTime(race.time) || '0:00.00';
-      e.best.textContent = fmtTime(race.best);
-      e.cp.textContent = `${(race.next + race.nGates - 1) % race.nGates}/${race.nGates}`;
-      e.pos.textContent = `${extra.position}/${bots.length + 1}`;
+      setT(e.lap, race.lap);
+      setT(e.lapTime, race.time > 0 ? fmtTime(race.time) : '0:00.00');
+      setT(e.best, fmtTime(race.best));
+      setT(e.cp, `${(race.next + race.nGates - 1) % race.nGates}/${race.nGates}`);
+      setT(e.pos, `${extra.position}/${bots.length + 1}`);
       // стрелка к следующему чекпоинту
       const g = race.nextGate();
       const dx = g.x - car.pos.x, dz = g.z - car.pos.z;
       const camYaw = Math.atan2(camera.position.x - car.pos.x, camera.position.z - car.pos.z);
       const a = Math.atan2(dx, dz) - camYaw + Math.PI;
       e.arrow.style.transform = `rotate(${-a}rad)`;
-      e.arrow.textContent = '';
-      e.arrow.dataset.dist = Math.round(Math.hypot(dx, dz)) + ' м';
+      const dist = Math.round(Math.hypot(dx, dz) / 5) * 5 + ' м';
+      if (e.arrow.dataset.dist !== dist) e.arrow.dataset.dist = dist;
     }
 
     // Миникарта

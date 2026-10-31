@@ -161,7 +161,8 @@ async function boot() {
     l.position.set(sx, 0.9, 2.3);
     l.target.position.set(sx * 3, -2.2, 30);
     car.mesh.add(l, l.target);
-    l.visible = false;
+    // фары всегда в сцене (днём яркость 0): включение ночью не пересобирает шейдеры — без фриза
+    l.intensity = 0;
     headlights.push(l);
   }
 
@@ -183,7 +184,7 @@ async function boot() {
     particles.uniforms.uFogColor.value.copy(p.fog);
     const night = p.night || 0;
     sky.userData.uniforms.uNight.value = night;
-    for (const h of headlights) h.visible = night > 0;
+    for (const h of headlights) h.intensity = night ? 150 : 0;
     car.model.headMat.emissiveIntensity = night ? 7 : 2.2;
     for (const b of bots) b.model.headMat.emissiveIntensity = night ? 7 : 2.2;
     rebuildEnv();
@@ -255,6 +256,13 @@ async function boot() {
   bindBtn('btnSound', toggleSound);
   bindBtn('btnReset', resetCar);
 
+  canvas.addEventListener('webglcontextlost', (e) => e.preventDefault());
+  canvas.addEventListener('webglcontextrestored', () => {
+    rebuildEnv();
+    tireTracks.clear();
+    tireTracks.prepaint(track, noise);
+  });
+
   // Меню
   loadingEl.classList.add('hidden');
   playBtn.classList.remove('hidden');
@@ -270,16 +278,25 @@ async function boot() {
     if (!started) hud.bigText('ПОЕХАЛИ!', 1000);
     started = true;
     clock.getDelta();
+    input.pressed.clear();
   };
   const openMenu = () => {
     running = false;
     playBtn.textContent = 'ПРОДОЛЖИТЬ';
     menuEl.classList.remove('hidden');
+    try { audio.ctx?.suspend(); } catch (e) { /* нет звука */ }
   };
+  // Свернули приложение — пауза и тишина
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) return;
+    if (running) openMenu();
+    else try { audio.ctx?.suspend(); } catch (e) { /* нет звука */ }
+  });
   playBtn.addEventListener('click', start);
   addEventListener('keydown', (e) => {
-    if (!running && (e.code === 'Enter' || e.code === 'Space')) start();
+    if (!running && (e.code === 'Enter' || (e.code === 'Space' && started === false))) start();
     else if (running && (e.code === 'Escape' || e.code === 'KeyP')) openMenu();
+    else if (!running && started && e.code === 'Escape') start();
   });
   bindBtn('btnMenu', openMenu);
 
@@ -339,13 +356,27 @@ async function boot() {
   const STEP = 1 / 120;
   let acc = 0;
   let fpsT = 0, fpsN = 0;
+  const _up = new THREE.Vector3(0, 1, 0), _lr = new THREE.Vector3(), _lu = new THREE.Vector3(), _lt = new THREE.Vector3();
   const windVel = { x: WIND.x * WIND.strength, z: WIND.z * WIND.strength };
   const zeroInput = { throttle: 0, brake: 0, steer: 0, handbrake: true, boost: false, jump: false };
   let lastCount = -1;
+  let jumpLatch = false;
 
   const frame = () => {
     requestAnimationFrame(frame);
     const dt = Math.min(clock.getDelta(), 1 / 20);
+
+    // Пауза (меню): мир стоит, только рисуем кадр под меню
+    if (!running) {
+      input.update(dt);
+      if (input.pressed.has('Start')) start();
+      input.pressed.clear();
+      rig.update(car, dt);
+      sky.position.copy(camera.position);
+      post.render(dt, 0, 0);
+      return;
+    }
+    if (input.consume('Start')) openMenu();
 
     // горячие клавиши
     if (input.consume('KeyC')) nextCam();
@@ -356,15 +387,18 @@ async function boot() {
     if (input.consume('KeyR')) resetCar();
 
     let inp = input.update(dt);
-    if (!running || (race.active && race.countdown > 0)) inp = zeroInput;
+    if (race.active && race.countdown > 0) inp = zeroInput;
+    if (inp === zeroInput) jumpLatch = false;
+    else if (inp.jump) jumpLatch = true;
 
-    // Физика с фиксированным шагом
+    // Физика с фиксированным шагом (нажатие прыжка держим до ближайшего шага)
     acc += dt;
     let steps = 0;
     while (acc >= STEP && steps < 8) {
+      inp.jump = jumpLatch;
+      jumpLatch = false;
       car.step(STEP, inp);
       world.collideCar(car);
-      inp.jump = false;
       acc -= STEP;
       steps++;
     }
@@ -413,11 +447,12 @@ async function boot() {
 
     // Дрифт-зона в чаше: очки ×2, рекорд заезда по зоне
     if (zone.def) {
-      const inside = Math.hypot(car.pos.x - zone.def.x, car.pos.z - zone.def.z) < zone.def.r * 1.12;
+      const dz = Math.hypot(car.pos.x - zone.def.x, car.pos.z - zone.def.z);
+      const inside = zone.inside ? dz < zone.def.r * 1.3 : dz < zone.def.r * 1.12;
       if (inside !== zone.inside) {
         zone.inside = inside;
         zonePill.classList.toggle('hidden', !inside);
-        if (inside) { drift.zoneMult = 2; zone.score = 0; hud.toast('ДРИФТ-ЗОНА: очки ×2', 'cyan'); }
+        if (inside) { drift.bank(); drift.zoneMult = 2; zone.score = 0; hud.toast('ДРИФТ-ЗОНА: очки ×2', 'cyan'); }
         else {
           // незавершённый занос засчитывается в зону при выезде
           if (drift.current > 50) zone.score += Math.round(drift.current * drift.mult * 2);
@@ -433,8 +468,9 @@ async function boot() {
       }
       if (inside) {
         const live = zone.score + Math.round(drift.current * drift.mult * 2);
-        zoneScoreEl.textContent = live.toLocaleString('ru-RU');
-        zoneBestEl.textContent = zone.best.toLocaleString('ru-RU');
+        const ls = live.toLocaleString('ru-RU'), bs = zone.best.toLocaleString('ru-RU');
+        if (zoneScoreEl.textContent !== ls) zoneScoreEl.textContent = ls;
+        if (zoneBestEl.textContent !== bs) zoneBestEl.textContent = bs;
       }
     }
 
@@ -444,7 +480,7 @@ async function boot() {
     for (const ev of drift.events) {
       if (ev.type === 'bank') {
         hud.toast(`+${ev.pts.toLocaleString('ru-RU')} ДРИФТ <small>x${ev.mult}${ev.zone > 1 ? ' · зона ×' + ev.zone : ''}</small>`, 'good');
-        if (zone.inside) zone.score += ev.pts;
+        if (zone.inside && ev.zone > 1) zone.score += ev.pts;
       }
       else if (ev.type === 'fail') hud.toast(`ДРИФТ СОРВАН −${ev.pts.toLocaleString('ru-RU')}`, 'bad');
       else if (ev.type === 'bonus') hud.toast(`${ev.label} +${ev.pts}`, 'cyan');
@@ -485,9 +521,12 @@ async function boot() {
     if (!dragging) rig.orbit *= Math.exp(-2.5 * dt);
     sky.position.copy(camera.position);
     const texel = (sc.right - sc.left) / QUALITY.shadowMap;
-    const tx = Math.round(car.pos.x / texel) * texel, tz = Math.round(car.pos.z / texel) * texel;
-    sun.target.position.set(tx, car.pos.y, tz);
-    sun.position.set(tx + sunDir.x * 250, car.pos.y + sunDir.y * 250, tz + sunDir.z * 250);
+    _lr.crossVectors(_up, sunDir).normalize();
+    _lu.crossVectors(sunDir, _lr);
+    const la = Math.round(car.pos.dot(_lr) / texel) * texel, lb = Math.round(car.pos.dot(_lu) / texel) * texel;
+    _lt.copy(_lr).multiplyScalar(la).addScaledVector(_lu, lb).addScaledVector(sunDir, car.pos.dot(sunDir));
+    sun.target.position.copy(_lt);
+    sun.position.copy(_lt).addScaledVector(sunDir, 250);
 
     audio.update(car, dt);
     hud.update(dt, car, drift, race, bots, rig, camera, { gear: audio.gear, position });

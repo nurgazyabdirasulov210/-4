@@ -1,6 +1,6 @@
 // Service worker: игра целиком кэшируется и работает без интернета.
 // При обновлении игры поменяйте VERSION, чтобы телефоны скачали новые файлы.
-const VERSION = 'dd-v5';
+const VERSION = 'dd-v6';
 const FILES = [
   './',
   "./icons/apple-touch-icon.png",
@@ -49,7 +49,8 @@ const FILES = [
 ];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(FILES)).then(() => self.skipWaiting()));
+  // cache: 'reload' — не брать устаревшие копии из HTTP-кэша браузера
+  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(FILES.map((u) => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (e) => {
@@ -60,15 +61,16 @@ self.addEventListener('activate', (e) => {
   );
 });
 
-// Сначала сеть (чтобы сразу видеть обновления), без сети — из кэша
+// Сеть с таймаутом: свежая версия, если сеть быстрая; иначе через 3 с — из кэша (без долгого ожидания на слабом интернете)
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET' || new URL(e.request.url).origin !== location.origin) return;
-  e.respondWith(
-    fetch(e.request)
-      .then((res) => {
-        if (res.ok) { const copy = res.clone(); caches.open(VERSION).then((c) => c.put(e.request, copy)); }
-        return res;
-      })
-      .catch(() => caches.match(e.request, { ignoreSearch: true }).then((r) => r || caches.match('./index.html'))),
-  );
+  e.respondWith((async () => {
+    const cached = await caches.match(e.request, { ignoreSearch: true });
+    const net = fetch(e.request).then((res) => {
+      if (res.ok) { const copy = res.clone(); caches.open(VERSION).then((c) => c.put(e.request, copy)); }
+      return res;
+    });
+    if (!cached) return net.catch(() => caches.match('./index.html'));
+    return Promise.race([net.catch(() => cached), new Promise((r) => setTimeout(() => r(cached), 3000))]);
+  })());
 });

@@ -71,11 +71,16 @@ export class Post {
   constructor(renderer, scene, camera) {
     this.renderer = renderer;
     const size = renderer.getDrawingBufferSize(new THREE.Vector2());
+    // HDR-буфер только если GPU умеет в него рисовать (иначе на слабых телефонах чёрный экран)
+    const ext = renderer.extensions;
+    const hdr = ext.has('EXT_color_buffer_float') || ext.has('EXT_color_buffer_half_float');
     const rt = new THREE.WebGLRenderTarget(size.x, size.y, {
-      type: THREE.HalfFloatType,
+      type: hdr ? THREE.HalfFloatType : THREE.UnsignedByteType,
       samples: renderer.capabilities.isWebGL2 ? QUALITY.msaa : 0,
     });
     this.composer = new EffectComposer(renderer, rt);
+    // MSAA нужен только буферу сцены; второй буфер композитора — без него (экономия памяти)
+    this.composer.renderTarget2.samples = 0;
     this.composer.addPass(new RenderPass(scene, camera));
     this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x / 2, size.y / 2), 0.32, 0.55, 0.88);
     if (QUALITY.bloom) this.composer.addPass(this.bloom);

@@ -129,13 +129,43 @@ export class World {
     return true;
   }
   occupy(x, z, r) { this.occupied.push({ x, z, r }); }
+
+  // Инстансы разбиваются на тайлы ~200 м: невидимые камерой (и вне теневой камеры) не рисуются
+  // items: [{ m: Matrix4, color?: Color, obj?: динамический объект }]
+  addChunked(geo, mat, items, { cast = true, receive = true, tile = 200, dynamic = false } = {}) {
+    const groups = new Map();
+    for (const it of items) {
+      const e = it.m.elements;
+      const k = Math.floor(e[12] / tile) + ',' + Math.floor(e[14] / tile);
+      let g = groups.get(k);
+      if (!g) groups.set(k, (g = []));
+      g.push(it);
+    }
+    const meshes = [];
+    for (const list of groups.values()) {
+      const inst = new THREE.InstancedMesh(geo, mat, list.length);
+      if (dynamic) inst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      list.forEach((it, i) => {
+        inst.setMatrixAt(i, it.m);
+        if (it.color) inst.setColorAt(i, it.color);
+        if (it.obj) { it.obj.mesh = inst; it.obj.idx = i; }
+      });
+      inst.castShadow = cast;
+      inst.receiveShadow = receive;
+      inst.computeBoundingSphere();
+      this.scene.add(inst);
+      meshes.push(inst);
+    }
+    return meshes;
+  }
+  // top — высота препятствия над землёй; хранится как мировая Y верхушки
   addCircle(x, z, r, top) {
-    const o = { kind: 'c', x, z, r, top };
+    const o = { kind: 'c', x, z, r, top: this.h(x, z) + top };
     this.colliders.insert(o, x, z, r);
     return o;
   }
   addBox(x, z, hx, hz, angle, top) {
-    const o = { kind: 'b', x, z, hx, hz, c: Math.cos(angle), s: Math.sin(angle), top };
+    const o = { kind: 'b', x, z, hx, hz, c: Math.cos(angle), s: Math.sin(angle), top: this.h(x, z) + top };
     this.colliders.insert(o, x, z, Math.hypot(hx, hz));
     return o;
   }
@@ -412,10 +442,8 @@ export class World {
     poleParts.push(cylBetween(new THREE.Vector3(0.9, 7.6, 0), new THREE.Vector3(0, 8.4, 0), 0.05, 0.05, 4));
     const poleGeo = merge(poleParts);
     const count = Math.floor(len / step) + 1;
-    const inst = new THREE.InstancedMesh(poleGeo, this.mats.pole, count);
-    inst.castShadow = true;
+    const poles = [];
     const tops = [];
-    let n = 0;
     for (let i = 0; i < count; i++) {
       const x = a.x + dir.x * i * step, z = a.y + dir.y * i * step;
       if (this.terrain.trackDistanceAt(x, z) < this.track.width / 2 + 4) {
@@ -426,15 +454,13 @@ export class World {
       const lean = (this.rnd() - 0.5) * 0.08;
       _q.setFromEuler(new THREE.Euler(lean, ang, (this.rnd() - 0.5) * 0.06));
       _m.compose(_v.set(x, y, z), _q, _s.set(1, 1, 1));
-      inst.setMatrixAt(n++, _m);
+      poles.push({ m: _m.clone() });
       this.addCircle(x, z, 0.35, 9);
       const pts = [new THREE.Vector3(-1.15, 8.8, 0), new THREE.Vector3(1.15, 8.8, 0), new THREE.Vector3(0, 9.3, 0)]
         .map((p) => p.applyMatrix4(_m));
       tops.push(pts);
     }
-    inst.count = n;
-    inst.instanceMatrix.needsUpdate = true;
-    this.scene.add(inst);
+    this.addChunked(poleGeo, this.mats.pole, poles, { receive: false });
     // Провода с провисанием
     const verts = [];
     for (let i = 0; i + 1 < tops.length; i++) {
@@ -562,19 +588,16 @@ export class World {
     markerGeo.translate(0, 0.7, 0);
     const markerMat = new THREE.MeshStandardMaterial({ map: stripesTexture('#d8382b', '#f2efe6', 4), roughness: 0.6 });
     const nM = Math.floor(tr.count / 8) * 2;
-    const markers = new THREE.InstancedMesh(markerGeo, markerMat, nM);
-    let k = 0;
+    const markers = [];
     for (let i = 0; i < tr.count; i += 8) {
       const p = tr.point(i), d = tr.dir(i);
       for (const sd of [-1, 1]) {
         const x = p.x + d.z * sd * (hw + 1.5), z = p.z - d.x * sd * (hw + 1.5);
         _m.compose(_v.set(x, this.h(x, z), z), _q.identity(), _s.set(1, 1, 1));
-        if (k < nM) markers.setMatrixAt(k++, _m);
+        if (markers.length < nM) markers.push({ m: _m.clone() });
       }
     }
-    markers.count = k;
-    markers.castShadow = true;
-    this.scene.add(markers);
+    this.addChunked(markerGeo, markerMat, markers, { receive: false });
 
     // Покрышки на внешней стороне поворотов
     for (let i = 0; i < tr.count; i += 3) {
@@ -672,18 +695,18 @@ export class World {
     }
     for (let v = 0; v < variants; v++) {
       const list = items.filter((it) => it.v === v);
-      const inst = new THREE.InstancedMesh(geos[v], this.mats.rock, list.length);
-      list.forEach((it, i) => {
+      const big = [], small = [];
+      for (const it of list) {
         const y = this.h(it.x, it.z) - 0.12 * it.s;
         _q.setFromEuler(new THREE.Euler((this.rnd() - 0.5) * 0.3, this.rnd() * 6.28, (this.rnd() - 0.5) * 0.3));
         const sx = it.s * (0.8 + this.rnd() * 0.5), sz = it.s * (0.8 + this.rnd() * 0.5);
         _m.compose(_v.set(it.x, y, it.z), _q, _s.set(sx, it.s * (0.7 + this.rnd() * 0.5), sz));
-        inst.setMatrixAt(i, _m);
-        if (it.s > 0.9) this.addCircle(it.x, it.z, Math.min(sx, sz) * 0.85, y + it.s * 0.5);
-      });
-      inst.castShadow = true;
-      inst.receiveShadow = true;
-      this.scene.add(inst);
+        (it.s >= 1 ? big : small).push({ m: _m.clone() });
+        if (it.s > 0.9) this.addCircle(it.x, it.z, Math.min(sx, sz) * 0.85, it.s * 0.38);
+      }
+      // мелкие камни теней почти не дают — не рисуем их в теневой проход
+      this.addChunked(geos[v], this.mats.rock, big);
+      this.addChunked(geos[v], this.mats.rock, small, { cast: false });
     }
   }
 
@@ -718,15 +741,13 @@ export class World {
         list.push({ x, z, s: 0.8 + this.rnd() * 0.8 });
       }
       if (v === 0) list.push({ x: -50, z: 30, s: 1.3 }, { x: 52, z: -36, s: 1.1 });
-      const inst = new THREE.InstancedMesh(geo, this.mats.tree, list.length);
-      list.forEach((it, i) => {
+      const items = list.map((it) => {
         _q.setFromAxisAngle(UP, this.rnd() * 6.28);
         _m.compose(_v.set(it.x, this.h(it.x, it.z), it.z), _q, _s.set(it.s, it.s, it.s));
-        inst.setMatrixAt(i, _m);
         this.addCircle(it.x, it.z, 0.35 * it.s, 4 * it.s);
+        return { m: _m.clone() };
       });
-      inst.castShadow = true;
-      this.scene.add(inst);
+      this.addChunked(geo, this.mats.tree, items, { receive: false });
     }
   }
 
@@ -756,15 +777,13 @@ export class World {
     };
     const extra = this.extraShrubs;
     const N = QUALITY.shrubs + extra.length;
-    const inst = new THREE.InstancedMesh(geo, mat, N);
-    const col = new THREE.Color();
+    const items = [];
     let k = 0;
     for (const e of extra) {
       _q.setFromAxisAngle(UP, this.rnd() * 6.28);
       _m.compose(_v.set(e.x, this.h(e.x, e.z) - 0.05, e.z), _q, _s.set(e.s, e.s * 1.4, e.s));
-      inst.setMatrixAt(k, _m);
-      col.setHSL(0.22 + this.rnd() * 0.06, 0.45, 0.45 + this.rnd() * 0.15);
-      inst.setColorAt(k++, col);
+      items.push({ m: _m.clone(), color: new THREE.Color().setHSL(0.22 + this.rnd() * 0.06, 0.45, 0.45 + this.rnd() * 0.15) });
+      k++;
     }
     for (let i = 0; i < N * 1.6 && k < N; i++) {
       // скопления вокруг «оазисов» шума
@@ -776,14 +795,10 @@ export class World {
       const s = 0.45 + this.rnd() * 1.0;
       _q.setFromAxisAngle(UP, this.rnd() * 6.28);
       _m.compose(_v.set(x, this.h(x, z) - 0.05, z), _q, _s.set(s, s * (0.7 + this.rnd() * 0.5), s));
-      inst.setMatrixAt(k, _m);
-      col.setHSL(0.09 + this.rnd() * 0.04, 0.25 + this.rnd() * 0.2, 0.55 + this.rnd() * 0.25);
-      inst.setColorAt(k, col);
+      items.push({ m: _m.clone(), color: new THREE.Color().setHSL(0.09 + this.rnd() * 0.04, 0.25 + this.rnd() * 0.2, 0.55 + this.rnd() * 0.25) });
       k++;
     }
-    inst.count = k;
-    inst.receiveShadow = true;
-    this.scene.add(inst);
+    this.addChunked(geo, mat, items, { cast: false });
   }
 
   // ---------- Динамические объекты ----------
@@ -806,7 +821,7 @@ export class World {
       r = 0.45; baseY = 0.45;
     } else if (type === 'tires') {
       const p = [];
-      for (let i = 0; i < 3; i++) { const t = new THREE.TorusGeometry(0.4, 0.15, 8, 18); t.rotateX(Math.PI / 2); t.translate(0, -0.3 + i * 0.3, 0); p.push(t); }
+      for (let i = 0; i < 3; i++) { const t = new THREE.TorusGeometry(0.4, 0.15, 6, 12); t.rotateX(Math.PI / 2); t.translate(0, -0.3 + i * 0.3, 0); p.push(t); }
       g = merge(p); mat = this.mats.rubber; r = 0.6; baseY = 0.45;
     } else if (type === 'crate') {
       const p = [new THREE.BoxGeometry(1.0, 1.0, 1.0)];
@@ -845,18 +860,24 @@ export class World {
   finalizeDynamic() {
     const tint = [new THREE.Color(0xb63a2a), new THREE.Color(0x2f5d8a), new THREE.Color(0x8a6a3a), new THREE.Color(0x3d6b45), new THREE.Color(0xd9d4c8)];
     for (const [type, d] of Object.entries(this._dynGeos)) {
-      const inst = new THREE.InstancedMesh(d.g, d.mat, d.list.length);
-      inst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-      inst.castShadow = true;
-      inst.receiveShadow = true;
-      d.list.forEach((o, i) => {
-        o.mesh = inst;
-        _m.compose(o.pos, o.quat, _s.set(1, 1, 1));
-        inst.setMatrixAt(i, _m);
-        if (type === 'barrel') inst.setColorAt(i, tint[Math.floor(this.rnd() * tint.length)]);
-      });
-      this.scene.add(inst);
-      d.mesh = inst;
+      if (type === 'tumbleweed') {
+        // перекати-поле всегда рядом с игроком и постоянно движется — один меш без отсечения
+        const inst = new THREE.InstancedMesh(d.g, d.mat, d.list.length);
+        inst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        inst.castShadow = true;
+        inst.frustumCulled = false;
+        d.list.forEach((o, i) => { o.mesh = inst; o.idx = i; _m.compose(o.pos, o.quat, _s.set(1, 1, 1)); inst.setMatrixAt(i, _m); });
+        this.scene.add(inst);
+        continue;
+      }
+      const items = d.list.map((o) => ({
+        m: _m.compose(o.pos, o.quat, _s.set(1, 1, 1)).clone(),
+        color: type === 'barrel' ? tint[Math.floor(this.rnd() * tint.length)] : undefined,
+        obj: o,
+      }));
+      // мелкие разрушаемые предметы — без теней (сотни штук), бочки и ящики — с тенями
+      const cast = type === 'barrel' || type === 'crate';
+      this.addChunked(d.g, d.mat, items, { cast, dynamic: true, tile: 160 });
     }
     this.tumbleweeds = this.dynamic.filter((o) => o.type === 'tumbleweed');
   }
@@ -1020,6 +1041,7 @@ export class World {
       _m.compose(o.pos, o.quat, _s.set(1, 1, 1));
       o.mesh.setMatrixAt(o.idx, _m);
       o.mesh.instanceMatrix.needsUpdate = true;
+      if (!tw) o.mesh.boundingSphere = null; // объект вылетел — пересчитать границы тайла для отсечения
       if (!tw && o.vel.lengthSq() < 0.2 && o.pos.y <= gy + 0.01) {
         o.flying = false;
         this.flying.delete(o);

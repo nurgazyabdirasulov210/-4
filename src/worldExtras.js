@@ -125,6 +125,7 @@ export function buildExtras(w) {
     w.place(car.root, x, z, ry, 0.25);
     car.root.rotation.z = (rnd() - 0.5) * 0.25;
     car.root.rotation.x = (rnd() - 0.5) * 0.15;
+    bakeStatic(car.root, w.scene);
     w.addBox(x, z, 1.0, 2.3, ry, 1.8);
     w.landmarks.push({ type: 'wreck', x, z });
     w.occupy(x, z, 5);
@@ -202,21 +203,42 @@ export function buildExtras(w) {
     if (!w.isFree(x, z, 1, 3)) continue;
     list.push({ x, z, s: 0.7 + rnd() * 0.7, r: rnd() * 6.28 });
   }
-  const cInst = new THREE.InstancedMesh(cactusGeo, cMat, list.length);
-  list.forEach((c, i) => {
+  w.addChunked(cactusGeo, cMat, list.map((c) => {
     _q.setFromAxisAngle(UP, c.r);
     _m.compose(_v.set(c.x, w.h(c.x, c.z) - 0.1, c.z), _q, _s.set(c.s, c.s, c.s));
-    cInst.setMatrixAt(i, _m);
     w.addCircle(c.x, c.z, 0.35 * c.s, 4 * c.s);
-  });
-  cInst.castShadow = true;
-  cInst.receiveShadow = true;
-  w.scene.add(cInst);
+    return { m: _m.clone() };
+  }));
 
   // ---------- Ящики в лагере и указатели ----------
   for (let i = 0; i < 8; i++) w.addDynamic('crate', -12 + (i % 4) * 1.15, -24 + Math.floor(i / 4) * 1.15, 0.1);
   placeSign(w, 0, 66, 0, 'ЛАГЕРЬ');
   placeSign(w, 0, -70, Math.PI, 'К ТРАССЕ');
+}
+
+// Неподвижный объект из многих мешей → по одному мешу на материал (меньше вызовов отрисовки)
+function bakeStatic(root, scene) {
+  root.updateMatrixWorld(true);
+  const byMat = new Map();
+  let ok = true;
+  root.traverse((o) => {
+    if (!o.isMesh) return;
+    if (Array.isArray(o.material) || o.isInstancedMesh) { ok = false; return; }
+    let vis = true;
+    for (let p = o; p; p = p.parent) vis = vis && p.visible;
+    if (!vis) return;
+    const g = strip(o.geometry.clone()).applyMatrix4(o.matrixWorld);
+    if (!byMat.has(o.material)) byMat.set(o.material, []);
+    byMat.get(o.material).push(g);
+  });
+  if (!ok) return;
+  root.removeFromParent();
+  for (const [mat, list] of byMat) {
+    const m = new THREE.Mesh(mergeGeometries(list, false), mat);
+    m.castShadow = true;
+    m.receiveShadow = true;
+    scene.add(m);
+  }
 }
 
 // ---------- Конструкторы ----------

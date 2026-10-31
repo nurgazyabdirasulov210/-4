@@ -336,10 +336,9 @@ export class Car {
     this.speed = Math.hypot(vf, vl);
     this.driftAngle = this.speed > 3 ? Math.atan2(vl, Math.abs(vf)) : 0;
 
-    const front = [vlatF, vlatF], rear = [vlr, vlr];
     for (let i = 0; i < 4; i++) {
       const w = W[i];
-      const lat = i < 2 ? front[i] : rear[i - 2];
+      const lat = i < 2 ? vlatF : vlr;
       let omega = vf / this.R;
       let slipLong = 0;
       if (i >= 2) {

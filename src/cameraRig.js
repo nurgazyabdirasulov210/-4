@@ -21,6 +21,10 @@ export class CameraRig {
     this.t = 0;
     this.fov = 55;
     this._v = new THREE.Vector3();
+    this._target = new THREE.Vector3();
+    this._desired = new THREE.Vector3();
+    this._lookT = new THREE.Vector3();
+    this.view = new THREE.Vector3(0, 0, 1); // dir с учётом поворота мышью
     this.orbit = 0; // поворот мышью/пальцем
   }
 
@@ -41,7 +45,7 @@ export class CameraRig {
     // направление камеры: смесь курса и вектора скорости (видно занос сбоку)
     const vx = car.vel.x, vz = car.vel.z;
     const sp = Math.hypot(vx, vz);
-    const target = new THREE.Vector3();
+    const target = this._target.set(0, 0, 0);
     if (this.mode === 3) target.copy(fwd);
     else if (sp > 4) {
       // камера идёт за движением: в заносе, «пончике» и при езде задом наперёд
@@ -49,24 +53,25 @@ export class CameraRig {
       if (car.vf > 0) target.lerp(fwd, 0.35);
       target.normalize();
     }
-    else target.copy(fwd).multiplyScalar(car.vf < -2 ? 1 : 1);
+    else target.copy(fwd);
     const k = instant ? 1 : 1 - Math.exp(-(this.mode === 3 ? 20 : 3.2) * dt);
     this.dir.lerp(target, k).normalize();
+    // поворот мышью применяется к виду, а не накапливается в dir
+    const v = this.view.copy(this.dir);
     if (this.orbit) {
       const c = Math.cos(this.orbit), s = Math.sin(this.orbit);
-      const x = this.dir.x * c + this.dir.z * s, z = -this.dir.x * s + this.dir.z * c;
-      this.dir.set(x, 0, z);
+      v.set(this.dir.x * c + this.dir.z * s, 0, -this.dir.x * s + this.dir.z * c);
     }
 
     const speedK = clamp(sp / 45, 0, 1);
     const dist = m.dist + (this.mode === 3 ? 0 : speedK * 3.5);
-    const desired = new THREE.Vector3(
-      car.pos.x - this.dir.x * dist,
+    const desired = this._desired.set(
+      car.pos.x - v.x * dist,
       car.pos.y + m.height + speedK * (this.mode === 0 ? 2 : 0.6),
-      car.pos.z - this.dir.z * dist,
+      car.pos.z - v.z * dist,
     );
     if (this.mode === 3) {
-      desired.copy(car.mesh.localToWorld(new THREE.Vector3(0, 1.75, 0.6)));
+      desired.copy(car.mesh.localToWorld(this._v.set(0, 1.75, 0.6)));
     }
     // не уходить под песок
     const gh = this.terrain.getHeight(desired.x, desired.z) + 1.4;
@@ -80,12 +85,12 @@ export class CameraRig {
     }
 
     const lookAhead = m.look * clamp(sp, 0, 40) * 0.12;
-    const lookT = new THREE.Vector3(
-      car.pos.x + this.dir.x * lookAhead,
+    const lookT = this._lookT.set(
+      car.pos.x + v.x * lookAhead,
       car.pos.y + (this.mode === 3 ? 1.4 : 0.8),
-      car.pos.z + this.dir.z * lookAhead,
+      car.pos.z + v.z * lookAhead,
     );
-    if (this.mode === 3) lookT.copy(car.mesh.localToWorld(new THREE.Vector3(0, 1.4, 12)));
+    if (this.mode === 3) lookT.copy(car.mesh.localToWorld(this._v.set(0, 1.4, 12)));
     if (instant) this.look.copy(lookT);
     else this.look.lerp(lookT, 1 - Math.exp(-10 * dt));
 
